@@ -9,6 +9,7 @@ const io = new Server(server);
 
 // --- 設定 (改成 let 以便修改) ---
 let hostPassword = process.env.HOST_PASSWORD || '8888';
+let hostName = 'HOST'; // 新增：主持人暱稱
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -150,7 +151,7 @@ io.on('connection', (socket) => {
         const pin = typeof data === 'object' ? data.pin : data;
         const username = typeof data === 'object' ? data.username : null;
 
-        if (meetingState.status === 'terminated' && username !== 'HOST') {
+        if (meetingState.status === 'terminated' && username !== hostName) { // 修改：比對 hostName
             socket.emit('joined', { success: false, error: '會議已結束' });
             return;
         }
@@ -168,19 +169,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 主持人登入 (驗證變數密碼) ---
+    // --- 主持人登入 ---
     socket.on('host-login', (inputPassword) => {
         if (inputPassword === hostPassword) {
             
-            // 🔥 關鍵修改：如果上一場會議已結束，自動開啟新的一場
             if (meetingState.status === 'terminated') {
                 console.log('Previous meeting ended. Starting a FRESH meeting...');
-                
-                // 1. 強制讓還留在舊房間的人斷線 (避免他們看到新房間的等待畫面)
-                // 當他們斷線重連時，因為 PIN 碼變了，會被踢回首頁，這正是我們要的
                 io.in('meeting-room').disconnectSockets();
-
-                // 2. 產生全新 PIN 碼與重置狀態
                 meetingState = {
                     pin: Math.floor(1000 + Math.random() * 9000).toString(),
                     status: 'waiting', 
@@ -191,14 +186,13 @@ io.on('connection', (socket) => {
                     endTime: null,
                     voteId: 0 
                 };
-
-                // 3. 清空歷史紀錄 (新會議就要有乾淨的開始)
                 meetingHistory = [];
                 voterRecords.clear();
             }
 
             socket.join('host-room'); 
-            socket.emit('host-login-success', { pin: meetingState.pin });
+            // 修改：回傳目前的 hostName
+            socket.emit('host-login-success', { pin: meetingState.pin, hostName: hostName });
             socket.join('meeting-room');
             broadcastState(); 
         } else {
@@ -209,6 +203,12 @@ io.on('connection', (socket) => {
     socket.on('change-password', (newPwd) => {
         hostPassword = newPwd;
         socket.emit('password-updated');
+    });
+
+    // --- 新增：修改主持人暱稱 ---
+    socket.on('change-host-name', (newName) => {
+        hostName = newName;
+        socket.emit('host-name-updated', hostName);
     });
 
     socket.on('add-preset', (newPreset) => {
