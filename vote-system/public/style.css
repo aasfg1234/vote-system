@@ -1,11 +1,10 @@
 :root {
-    /* 文青莫蘭迪配色 */
     --bg-paper: #fdfbf7;
     --card-bg: #ffffff;
-    --primary: #6b705c;       /* 霧灰綠 */
+    --primary: #6b705c;
     --primary-hover: #585c4b;
-    --accent: #ddbea9;        /* 杏桃色 */
-    --text-main: #3f4238;     /* 深炭灰 */
+    --accent: #ddbea9;
+    --text-main: #3f4238;
     --text-light: #8e8d8a;
     --border: #e6e2d3;
     --success: #84a98c;
@@ -22,7 +21,6 @@ body {
     min-height: 100vh;
     display: flex;
     justify-content: center;
-    /* 紙質紋理濾鏡 */
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
 }
 
@@ -50,7 +48,7 @@ h1, h2, .question {
 .link-label { font-size: 0.9rem; color: var(--text-light); margin-bottom: 5px; font-family: 'Noto Serif TC'; }
 .link-text { color: var(--primary); text-decoration: none; border-bottom: 1px solid var(--primary); word-break: break-all; }
 
-input[type="number"], input[type="text"] {
+input[type="number"], input[type="text"], input[type="password"] {
     width: 100%; padding: 12px;
     border: 1px solid var(--border);
     background: #faf9f6;
@@ -88,7 +86,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 }
 .question { font-size: 1.6rem; margin-bottom: 30px; text-align: center; line-height: 1.5; }
 
-/* 選項卡片與印章特效 */
+/* 選項卡片 */
 .option-card {
     position: relative; border: 1px solid var(--border);
     background: #faf9f6; border-radius: 2px;
@@ -104,7 +102,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 .option-text { font-size: 1.1rem; font-weight: 500; }
 .vote-stats { font-family: 'Noto Serif TC'; color: var(--text-light); font-size: 0.95rem; }
 
-/* 印章動畫 */
+/* 印章特效 */
 @keyframes stamp-in {
     0% { transform: scale(3) rotate(15deg); opacity: 0; }
     50% { transform: scale(0.9) rotate(-5deg); opacity: 1; }
@@ -122,7 +120,16 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
     animation: stamp-in 0.3s forwards;
 }
 
-/* 主持人版面與提示 */
+/* 搖晃動畫 (密碼錯誤用) */
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-10px); }
+  50% { transform: translateX(10px); }
+  75% { transform: translateX(-10px); }
+  100% { transform: translateX(0); }
+}
+
+/* 佈局與 RWD */
 .host-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; width: 100%; max-width: 1100px; }
 @media (max-width: 768px) { .host-grid { grid-template-columns: 1fr; } }
 .pin-badge { background: var(--text-main); color: #fff; padding: 4px 12px; font-family: 'Noto Serif TC'; border-radius: 50px; display: inline-block; margin-bottom: 20px; }
