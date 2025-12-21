@@ -19,6 +19,11 @@ const presetButtonsContainer = document.getElementById('preset-buttons');
 const fontUpBtn = document.getElementById('font-up'); 
 const fontDownBtn = document.getElementById('font-down'); 
 
+// 主持人專用監控元素
+const monitorCountEl = document.getElementById('monitor-count');
+const monitorTotalEl = document.getElementById('monitor-total');
+const monitorOptionsEl = document.getElementById('monitor-options');
+
 let myVotes = [];
 let currentSettings = {};
 let lastStatus = 'waiting';
@@ -118,17 +123,66 @@ socket.on('connect', () => {
 });
 
 socket.on('state-update', (state) => {
-    // 主持人頁面：只更新歷史紀錄和樣板，不渲染投票介面 (因為是 iframe)
+    // 主持人頁面：渲染監控區 + 歷史紀錄 + 樣板
     if (isHostPage) {
+        renderHostMonitor(state); // 新增的監控渲染函式
         if (state.history) renderHistory(state.history);
         if (state.presets) renderPresets(state.presets);
         return; 
     }
 
+    // 與會者頁面
     if (!voteScreen) return; 
     lastServerState = state;
     renderMeeting(state);
 });
+
+// --- 新增：主持人監控渲染函式 ---
+function renderHostMonitor(state) {
+    if (!monitorOptionsEl) return;
+
+    // 更新數字
+    if (monitorCountEl) monitorCountEl.textContent = state.joinedCount;
+    if (monitorTotalEl) monitorTotalEl.textContent = state.totalVotes;
+
+    // 狀態為等待中
+    if (state.status === 'waiting') {
+        monitorOptionsEl.innerHTML = '<p style="text-align:center; font-size:0.8rem; color:#ccc;">等待發布...</p>';
+        return;
+    }
+
+    // 渲染選項條 (類似與會者畫面，但更精簡)
+    let html = '';
+    
+    // 找出最高票 (為了標示)
+    let maxVotes = 0;
+    if (state.status === 'ended') {
+        maxVotes = Math.max(...state.options.map(o => o.count));
+    }
+
+    state.options.forEach(opt => {
+        // 主持人永遠看到真實數據 (不用判斷 blindMode)
+        const percent = opt.percent;
+        const count = opt.count;
+        
+        let highlightStyle = '';
+        if (state.status === 'ended' && maxVotes > 0 && count === maxVotes) {
+            highlightStyle = 'border: 2px solid var(--gold); background: #fffdf0;';
+        }
+
+        html += `
+        <div style="position:relative; margin-bottom:6px; padding:6px 10px; border:1px solid #eee; border-radius:3px; background:#fff; ${highlightStyle}">
+            <div style="position:absolute; top:0; left:0; bottom:0; width:${percent}%; background:${opt.color}; opacity:0.15; z-index:0;"></div>
+            <div style="position:relative; z-index:1; display:flex; justify-content:space-between; font-size:0.85rem;">
+                <span style="font-weight:500;">${opt.text}</span>
+                <span style="color:var(--text-light);">${count} 票 (${percent}%)</span>
+            </div>
+        </div>`;
+    });
+
+    monitorOptionsEl.innerHTML = html;
+}
+// ----------------------------
 
 socket.on('vote-confirmed', (votes) => {
     myVotes = votes;
@@ -175,7 +229,7 @@ function renderMeeting(state) {
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
-                <div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>
+                ${!isHostPage ? '<div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>' : ''}
             </div>`;
         if(questionEl) questionEl.textContent = '';
         return;
@@ -205,9 +259,6 @@ function renderMeeting(state) {
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
-        // 主持人現在看不到名單了，因為他在 iframe 外面，只能從歷史紀錄看
-        // 但 iframe 裡面的他如果按了結果確認，可以看到結果
-
         let resultClass = '';
         let crownHtml = '';
         if (state.status === 'ended' && maxVotes > 0) {
@@ -236,7 +287,7 @@ function renderMeeting(state) {
         </div>`;
     });
     
-    if (state.status === 'ended') {
+    if (state.status === 'ended' && !isHostPage) {
         html += `
             <div style="margin-top: 20px; text-align: center; animation: fadeIn 0.5s;">
                 <button onclick="confirmResult()" class="btn" style="background: var(--text-main); color: #fff;">
@@ -338,6 +389,7 @@ function updateSelectionUI() {
 }
 
 function handleVote(optionId) {
+    // 主持人頁面不需要這個邏輯，因為是 iframe
     if (isHostPage) return; 
 
     if (statusTextEl && statusTextEl.textContent.includes('結束')) return;
