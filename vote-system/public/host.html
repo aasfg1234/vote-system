@@ -86,17 +86,8 @@
             </div>
 
             <h2 style="margin-bottom:20px;">📱 現場預覽</h2>
-            <div id="login-screen" class="hidden"></div>
+            
             <div id="vote-screen">
-                <div class="status-bar">
-                    <span id="status-text">等待中</span>
-                    <span>
-                        ⏱ <span id="timer">0s</span> | 
-                        👥 <span id="joined-count">0</span> | 
-                        🗳️ <span id="total-votes">0</span>
-                    </span>
-                </div>
-                <div id="vote-screen">
                 <div class="status-bar">
                     <span id="status-text">等待中</span>
                     <span>
@@ -115,9 +106,6 @@
                     <p style="text-align:center; color:#ccc; font-size:0.9rem;">尚未有歸檔紀錄</p>
                 </div>
             </div>
-                <div id="question-text" class="question">等待發布...</div>
-                <div id="options-container"></div>
-            </div>
         </div>
     </div>
 
@@ -129,7 +117,6 @@
     <script src="app.js"></script>
     <script>
         window.addEventListener('load', () => {
-            // QR Code 直接導向 participant.html
             let baseUrl = window.location.href.replace('/host.html', '');
             if(baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
             const targetUrl = baseUrl + '/participant.html';
@@ -148,6 +135,4 @@
     </script>
 </body>
 </html>
-
-
 
