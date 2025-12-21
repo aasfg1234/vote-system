@@ -9,6 +9,7 @@
     --border: #e6e2d3;
     --success: #84a98c;
     --danger: #d66853;
+    --gold: #d4af37; /* 新增金色變數 */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -86,14 +87,41 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 }
 .question { font-size: 1.6rem; margin-bottom: 30px; text-align: center; line-height: 1.5; }
 
-/* 選項卡片 */
+/* 選項卡片基礎樣式 */
 .option-card {
     position: relative; border: 1px solid var(--border);
     background: #faf9f6; border-radius: 2px;
     padding: 18px 20px; margin-bottom: 15px;
-    cursor: pointer; transition: all 0.3s; overflow: hidden;
+    cursor: pointer; transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); 
+    overflow: hidden;
 }
 .option-card:hover, .option-card.selected { border-color: var(--primary); background: #fff; }
+
+/* --- 新增：冠軍與落選者樣式 --- */
+/* 冠軍卡片：放大、金色邊框、陰影、不透明 */
+.option-card.winner-card {
+    border: 2px solid var(--gold) !important;
+    background: #fffdf0 !important;
+    transform: scale(1.05);
+    box-shadow: 0 10px 25px rgba(212, 175, 55, 0.2);
+    z-index: 10;
+    opacity: 1 !important;
+}
+.winner-icon {
+    position: absolute; left: -5px; top: -5px;
+    font-size: 1.5rem; transform: rotate(-15deg);
+    z-index: 20; filter: drop-shadow(2px 2px 0px rgba(0,0,0,0.1));
+}
+
+/* 落選卡片：變透明、變灰、縮小 */
+.option-card.loser-card {
+    opacity: 0.4;
+    filter: grayscale(80%);
+    transform: scale(0.98);
+    border-color: transparent;
+}
+/* --------------------------- */
+
 .progress-bg {
     position: absolute; top: 0; left: 0; bottom: 0; z-index: 0;
     transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); opacity: 0.15;
@@ -129,6 +157,16 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
   100% { transform: translateX(0); }
 }
 
+/* 投票者名單標籤 */
+.voter-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.voter-tag { background: #e2e8f0; color: #475569; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; font-family: 'Noto Sans TC'; }
+
+/* 歷史紀錄區塊 */
+.history-section { margin-top: 40px; border-top: 2px dashed var(--border); padding-top: 20px; }
+.history-card { background: #fff; border: 1px solid var(--border); padding: 15px; margin-bottom: 15px; border-radius: 4px; opacity: 0.8; }
+.history-title { font-family: 'Noto Serif TC'; font-weight: bold; margin-bottom: 10px; color: var(--text-main); }
+.history-stats { font-size: 0.9rem; color: var(--text-light); }
+
 /* 佈局與 RWD */
 .host-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; width: 100%; max-width: 1100px; }
 @media (max-width: 768px) { .host-grid { grid-template-columns: 1fr; } }
@@ -145,43 +183,3 @@ body.projector-mode .question { font-size: 3.5rem; margin-bottom: 60px; }
 body.projector-mode .option-card { pointer-events: none; padding: 30px; margin-bottom: 20px; }
 body.projector-mode .option-text { font-size: 1.5rem; }
 body.projector-mode .vote-stats { font-size: 1.5rem; }
-/* --- 新增：投票者名單標籤 (Host Only) --- */
-.voter-tags {
-    margin-top: 8px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-.voter-tag {
-    background: #e2e8f0;
-    color: #475569;
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-family: 'Noto Sans TC';
-}
-
-/* --- 新增：歷史紀錄區塊 --- */
-.history-section {
-    margin-top: 40px;
-    border-top: 2px dashed var(--border);
-    padding-top: 20px;
-}
-.history-card {
-    background: #fff;
-    border: 1px solid var(--border);
-    padding: 15px;
-    margin-bottom: 15px;
-    border-radius: 4px;
-    opacity: 0.8;
-}
-.history-title {
-    font-family: 'Noto Serif TC';
-    font-weight: bold;
-    margin-bottom: 10px;
-    color: var(--text-main);
-}
-.history-stats {
-    font-size: 0.9rem;
-    color: var(--text-light);
-}
