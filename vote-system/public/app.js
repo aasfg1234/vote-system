@@ -26,6 +26,18 @@ const urlParams = new URLSearchParams(window.location.search);
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
+// --- 新增：取得或產生唯一裝置 ID ---
+function getDeviceId() {
+    let id = localStorage.getItem('vote_device_id');
+    if (!id) {
+        // 如果沒有，產生一個隨機 ID 並存起來
+        id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now();
+        localStorage.setItem('vote_device_id', id);
+    }
+    return id;
+}
+const deviceId = getDeviceId(); // 執行取得 ID
+
 // 金句庫
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
@@ -37,13 +49,15 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// --- 1. 與會者邏輯 (僅在與會者頁面或投影模式執行) ---
+// --- 1. 與會者邏輯 ---
 if (isParticipantPage) {
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
             const pin = pinInput.value;
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
-            socket.emit('join', pin);
+            
+            // 重點修改：加入時傳送 deviceId
+            socket.emit('join', { pin: pin, deviceId: deviceId });
         });
     }
 
@@ -55,24 +69,20 @@ if (isParticipantPage) {
             showToast(data.error);
         }
     });
-
-    // 投影模式自動登入 (需手動從 URL 或 Host 端傳遞 PIN，此處簡化為需手動輸入)
-    // 實際上投影模式是從 Host 打開的，通常 Host 已登入。
-    // 但因為投影視窗是新視窗，視為新 Client。
-    // 建議投影模式直接顯示 "請掃描 QR Code"，只在 Host 端顯示結果即可。
-    // 但為了讓投影也能顯示結果，我們保留 Socket 監聽。
 }
 
 // --- 2. 狀態渲染 (通用) ---
 socket.on('state-update', (state) => {
-    // 只有在投票畫面或主持人預覽畫面才渲染
     if (!voteScreen && !isHostPage) return; 
-    
     renderMeeting(state);
 });
 
 socket.on('vote-confirmed', (votes) => {
     myVotes = votes;
+    // 收到確認後重新渲染，確保選取狀態正確
+    // 我們可以觸發一次畫面更新，但因為 state-update 會來，所以這裡主要用來提示
+    // 這裡我們手動更新 UI 的選取狀態會比較即時
+    updateSelectionUI();
     showToast('投票已記錄');
 });
 
@@ -86,13 +96,15 @@ socket.on('timer-tick', (timeLeft) => {
 function renderMeeting(state) {
     currentSettings = state.settings;
     if(totalVotesEl) totalVotesEl.textContent = state.totalVotes;
-    if(joinedCountEl) joinedCountEl.textContent = state.joinedCount; // 更新加入人數
+    if(joinedCountEl) joinedCountEl.textContent = state.joinedCount;
     if(timerEl) timerEl.textContent = state.timeLeft + 's';
 
     if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
     lastStatus = state.status;
 
     if (state.status === 'waiting') {
+        // 重置本地投票紀錄，避免顯示上一題的選擇
+        myVotes = []; 
         if(statusTextEl) statusTextEl.textContent = '準備中';
         if(optionsContainer) optionsContainer.innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
@@ -118,20 +130,20 @@ function renderMeeting(state) {
 
     let html = '';
     state.options.forEach(opt => {
-        const isSelected = myVotes.includes(opt.id);
         const isBlind = opt.percent === -1;
-        
         const displayWidth = isBlind ? 0 : opt.percent;
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
-        const stampHtml = isSelected ? `<div class="stamp-mark">已選</div>` : '';
-
+        // 這裡先不加 selected class，稍後由 updateSelectionUI 統一處理
         html += `
-        <div class="option-card ${isSelected ? 'selected' : ''}" 
+        <div class="option-card" 
+             id="opt-${opt.id}"
              onclick="handleVote(${opt.id})" 
              style="border-left: 5px solid ${opt.color}">
-            ${stampHtml}
+             
+            <div class="stamp-mark" style="display:none;">已選</div>
+            
             <div class="progress-bg" style="width: ${displayWidth}%; background-color: ${opt.color}; opacity: ${bgOpacity};"></div>
             <div class="option-content">
                 <span class="option-text">${opt.text}</span>
@@ -142,10 +154,31 @@ function renderMeeting(state) {
     
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
+        updateSelectionUI(); // 渲染完後立即更新選取狀態
+        
         if (state.status === 'ended') {
             Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
         }
     }
+}
+
+// 獨立出來的 UI 更新函式，負責印章和邊框顏色
+function updateSelectionUI() {
+    if (!optionsContainer) return;
+    const cards = optionsContainer.querySelectorAll('.option-card');
+    cards.forEach(card => {
+        const optId = parseInt(card.id.replace('opt-', ''));
+        const isSelected = myVotes.includes(optId);
+        const stamp = card.querySelector('.stamp-mark');
+        
+        if (isSelected) {
+            card.classList.add('selected');
+            if(stamp) stamp.style.display = 'block';
+        } else {
+            card.classList.remove('selected');
+            if(stamp) stamp.style.display = 'none';
+        }
+    });
 }
 
 function handleVote(optionId) {
@@ -158,7 +191,12 @@ function handleVote(optionId) {
     } else {
         myVotes = [optionId];
     }
-    socket.emit('submit-vote', myVotes);
+    
+    // UI 先反應，增加流暢度
+    updateSelectionUI();
+
+    // 重點修改：提交時帶上 deviceId
+    socket.emit('submit-vote', { votes: myVotes, deviceId: deviceId });
 }
 
 function showToast(msg) {
@@ -174,7 +212,7 @@ function launchConfetti() {
     }
 }
 
-// --- 3. 主持人邏輯 (僅在主持人頁面執行) ---
+// --- 3. 主持人邏輯 ---
 if (isHostPage) {
     const authOverlay = document.getElementById('host-auth-overlay');
     const pwdInput = document.getElementById('host-password-input');
@@ -194,6 +232,8 @@ if (isHostPage) {
         authOverlay.style.opacity = '0';
         setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
+        // 主持人也加入，方便預覽，但主持人不應該用 deviceId 投票影響結果，所以傳 null
+        socket.emit('join', { pin: data.pin, deviceId: null }); 
         showToast('🔓 控制台已解鎖');
     });
 
@@ -205,7 +245,6 @@ if (isHostPage) {
         setTimeout(() => pwdInput.style.animation = '', 500);
     });
 
-    // 主持人控制功能
     document.getElementById('start-vote-btn').addEventListener('click', () => {
         const question = document.getElementById('h-question').value;
         if(!question) return showToast('請輸入題目');
@@ -243,7 +282,6 @@ if (isHostPage) {
     });
     
     document.getElementById('open-projector-btn').addEventListener('click', () => {
-        // 修正：投影模式指向 participant.html
         const url = window.location.href.replace('host.html', 'participant.html') + '?mode=projector';
         window.open(url, 'ProjectorWindow', 'width=1024,height=768');
     });
@@ -259,7 +297,6 @@ if (isHostPage) {
         document.body.removeChild(link);
     });
 
-    // 樣板功能
     window.applyPreset = function(type) {
         const qInput = document.getElementById('h-question');
         const optInputs = document.querySelectorAll('.opt-text');
@@ -279,4 +316,3 @@ if (isHostPage) {
         showToast('已套用樣板');
     };
 }
-
