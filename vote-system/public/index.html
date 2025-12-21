@@ -21,6 +21,17 @@
         .role-title { font-family: 'Noto Serif TC'; font-size: 1.5rem; font-weight: 600; margin-bottom: 5px; display: block; }
         .role-desc { font-size: 0.9rem; color: var(--text-light); display: block; }
     </style>
+    
+    <script>
+        // 檢查是否有與會者登入紀錄
+        const storedPin = localStorage.getItem('vote_pin');
+        const storedName = localStorage.getItem('vote_username');
+
+        // 如果有資料，直接跳轉到與會者頁面 (participant.html)
+        if (storedPin && storedName) {
+            window.location.href = 'participant.html';
+        }
+    </script>
 </head>
 <body id="portal-page">
     <div class="container portal-container">
