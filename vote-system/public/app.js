@@ -230,13 +230,15 @@ function renderMeeting(state) {
         if(state.status === 'waiting') myVotes = []; 
         if(statusTextEl) statusTextEl.textContent = state.status === 'ended' ? '等待下一題' : '準備中';
         
+        // --- 修改：移除了 [切換使用者] 按鈕 ---
         if(optionsContainer) optionsContainer.innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
-                ${!isHostPage ? '<div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>' : ''}
             </div>`;
+        // ------------------------------------
+        
         if(questionEl) questionEl.textContent = '';
         return;
     }
@@ -564,8 +566,10 @@ if (isHostPage) {
         showToast('正在準備檔案...');
     });
     
-    // --- 關鍵修改：移除了 open-projector-btn 的監聽 ---
-    // (因為該按鈕在 HTML 中已經被移除了)
+    document.getElementById('open-projector-btn').addEventListener('click', () => {
+        const url = window.location.href.replace('host.html', 'participant.html') + '?mode=projector';
+        window.open(url, 'ProjectorWindow', 'width=1024,height=768');
+    });
 
     socket.on('export-data', (csvContent) => {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -578,7 +582,6 @@ if (isHostPage) {
         document.body.removeChild(link);
     });
 
-    // 將 applyPreset 移到安全的位置
     window.applyPreset = function(index) {
         if (!currentPresets[index]) return;
         const preset = currentPresets[index];
