@@ -200,8 +200,9 @@ function initHostLogic() {
         showToast('正在準備檔案...');
     });
     
-    document.getElementById('open-projector-btn').addEventListener('click', () => {
-        const url = window.location.href.replace('host.html', 'index.html') + '?mode=projector';
+document.getElementById('open-projector-btn').addEventListener('click', () => {
+        // 修改這裡：原本是 index.html，現在要改成 participant.html
+        const url = window.location.href.replace('host.html', 'participant.html') + '?mode=projector';
         window.open(url, 'ProjectorWindow', 'width=1024,height=768');
     });
 }
@@ -241,3 +242,4 @@ window.applyPreset = function(type) {
 if (isHost && !isProjector) {
     initHostLogic();
 }
+
