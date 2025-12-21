@@ -26,14 +26,10 @@ let currentVoteId = 0;
 let currentPin = '';
 let currentUsername = '';
 let currentPresets = []; 
-
-// --- 新增：本地確認狀態 ---
-// 用來記錄使用者是否在結果頁按了「確認/OK」
 let hasConfirmedResult = false;
-// 用來暫存最後一次的 state，方便我們在本地切換畫面時重繪
 let lastServerState = null;
 
-// --- 字體縮放邏輯 ---
+// --- 字體縮放 ---
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
 
@@ -46,7 +42,6 @@ function adjustFont(delta) {
     currentFontSize += delta;
     if (currentFontSize < 0.6) currentFontSize = 0.6;
     if (currentFontSize > 2.2) currentFontSize = 2.2;
-    
     document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
     localStorage.setItem('vote_font_scale', currentFontSize);
     showToast(`字體大小: ${Math.round(currentFontSize * 100)}%`);
@@ -59,7 +54,6 @@ const urlParams = new URLSearchParams(window.location.search);
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// 金句庫
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
     "「選擇本身就是一種放棄，但也是一種獲得。」",
@@ -70,11 +64,10 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// 強制自動登入邏輯
+// 自動登入
 if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
-
     if (storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
@@ -88,7 +81,6 @@ if (isParticipantPage) {
             const username = usernameInput.value.trim();
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
-            
             localStorage.setItem('vote_pin', pin);
             localStorage.setItem('vote_username', username);
             currentPin = pin;
@@ -99,9 +91,7 @@ if (isParticipantPage) {
 
     if (leaveBtn) {
         leaveBtn.addEventListener('click', () => {
-            if (confirm('確定要離開會議嗎？')) {
-                logout();
-            }
+            if (confirm('確定要離開會議嗎？')) logout();
         });
     }
 
@@ -127,14 +117,10 @@ socket.on('connect', () => {
     }
 });
 
-// 狀態渲染
 socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
-    
-    // 儲存狀態供本地切換使用
     lastServerState = state;
     renderMeeting(state);
-    
     if (isHostPage) {
         if (state.history) renderHistory(state.history);
         if (state.presets) renderPresets(state.presets);
@@ -155,15 +141,13 @@ socket.on('timer-tick', (timeLeft) => {
 });
 
 function renderMeeting(state) {
-    // 檢查是否為新的一題，如果是，重置確認狀態
     if (state.voteId !== currentVoteId) {
         myVotes = [];
         currentVoteId = state.voteId;
-        hasConfirmedResult = false; // 重置：新題目來了，不能再顯示金句
+        hasConfirmedResult = false;
         updateSelectionUI(); 
     }
 
-    // 處理會議結束
     if (state.status === 'terminated') {
         renderTerminatedScreen();
         return;
@@ -177,17 +161,10 @@ function renderMeeting(state) {
     if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
     lastStatus = state.status;
 
-    // --- 關鍵修改：決定要顯示什麼畫面 ---
-    
-    // 情況 A: 伺服器在等待中 -> 顯示金句
-    // 情況 B: 投票已結束 且 使用者按了確認 -> 顯示金句 (本地等待)
-    // 注意：主持人頁面 (isHostPage) 永遠不應該被本地確認覆蓋，主持人要一直看到結果
     const showWaitingScreen = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult && !isHostPage);
 
     if (showWaitingScreen) {
-        // 清空本地選擇
         if(state.status === 'waiting') myVotes = []; 
-        
         if(statusTextEl) statusTextEl.textContent = state.status === 'ended' ? '等待下一題' : '準備中';
         
         if(optionsContainer) optionsContainer.innerHTML = `
@@ -201,7 +178,6 @@ function renderMeeting(state) {
         return;
     }
     
-    // 以下為正常顯示題目或結果
     if(questionEl) questionEl.textContent = state.question;
 
     if(statusTextEl) {
@@ -250,7 +226,7 @@ function renderMeeting(state) {
         <div class="option-card ${resultClass}" 
              id="opt-${opt.id}"
              onclick="handleVote(${opt.id})" 
-             style="border-left: 5px solid ${opt.color}">
+             style="border-left: 5px solid ${opt.color}; cursor: ${isHostPage ? 'default' : 'pointer'};">
              
             ${crownHtml}
             <div class="stamp-mark" style="display:none;">已選</div>
@@ -264,7 +240,6 @@ function renderMeeting(state) {
         </div>`;
     });
     
-    // --- 新增：如果是結束狀態，且不是主持人，顯示確認按鈕 ---
     if (state.status === 'ended' && !isHostPage) {
         html += `
             <div style="margin-top: 20px; text-align: center; animation: fadeIn 0.5s;">
@@ -279,25 +254,19 @@ function renderMeeting(state) {
         optionsContainer.innerHTML = html;
         updateSelectionUI();
         if (state.status === 'ended' || isHostPage) { 
-             if (state.status === 'ended') {
-                Array.from(optionsContainer.children).forEach(child => {
-                    // 排除按鈕容器，只鎖定選項卡片
-                    if (child.classList.contains('option-card')) {
-                        child.style.pointerEvents = 'none';
-                    }
-                });
-             }
+             // 主持人頁面：卡片鎖死，不能互動
+             Array.from(optionsContainer.children).forEach(child => {
+                if (child.classList.contains('option-card')) {
+                    child.style.pointerEvents = 'none';
+                }
+             });
         }
     }
 }
 
-// --- 新增：處理使用者按下確認 ---
 window.confirmResult = function() {
     hasConfirmedResult = true;
-    // 重新渲染畫面 (這時候因為 hasConfirmedResult 為 true，會跑進金句區塊)
-    if (lastServerState) {
-        renderMeeting(lastServerState);
-    }
+    if (lastServerState) renderMeeting(lastServerState);
 }
 
 function renderTerminatedScreen() {
@@ -326,7 +295,6 @@ function renderHistory(history) {
         historyContainer.innerHTML = '<p style="text-align:center; color:#ccc; font-size:0.9rem;">尚未有歸檔紀錄</p>';
         return;
     }
-
     let html = '';
     [...history].reverse().forEach(record => {
         const timeStr = new Date(record.timestamp).toLocaleTimeString();
@@ -337,14 +305,11 @@ function renderHistory(history) {
                 <span>${opt.count} 票</span>
              </div>`;
         });
-
         html += `
         <div class="history-card">
             <div class="history-title">${record.question}</div>
             <div class="history-stats">🕒 ${timeStr} | 🗳️ 總票數: ${record.totalVotes}</div>
-            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">
-                ${optionsSummary}
-            </div>
+            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">${optionsSummary}</div>
         </div>`;
     });
     historyContainer.innerHTML = html;
@@ -353,7 +318,6 @@ function renderHistory(history) {
 function renderPresets(presets) {
     if (!presetButtonsContainer) return;
     currentPresets = presets; 
-    
     let html = '';
     presets.forEach((preset, index) => {
         html += `<button class="preset-btn" onclick="applyPreset(${index})">${preset.name}</button>`;
@@ -368,7 +332,6 @@ function updateSelectionUI() {
         const optId = parseInt(card.id.replace('opt-', ''));
         const isSelected = myVotes.includes(optId);
         const stamp = card.querySelector('.stamp-mark');
-        
         if (isSelected) {
             card.classList.add('selected');
             if(stamp) stamp.style.display = 'block';
@@ -380,6 +343,9 @@ function updateSelectionUI() {
 }
 
 function handleVote(optionId) {
+    // --- 關鍵修改：如果是主持人，禁止執行任何投票邏輯 ---
+    if (isHostPage) return; 
+
     if (statusTextEl && statusTextEl.textContent.includes('結束')) return;
     if (navigator.vibrate) navigator.vibrate(15);
 
@@ -389,7 +355,6 @@ function handleVote(optionId) {
     } else {
         myVotes = [optionId];
     }
-    
     updateSelectionUI();
     socket.emit('submit-vote', { votes: myVotes, username: currentUsername });
 }
@@ -413,14 +378,12 @@ window.logout = function() {
     location.href = 'index.html';
 }
 
-// 主持人頁面邏輯
 if (isHostPage) {
     const authOverlay = document.getElementById('host-auth-overlay');
     const pwdInput = document.getElementById('host-password-input');
     const loginBtn = document.getElementById('host-login-submit');
     const errorMsg = document.getElementById('login-error-msg');
     const terminateBtn = document.getElementById('terminate-btn');
-    
     const settingsModal = document.getElementById('settings-modal');
     const openSettingsBtn = document.getElementById('open-settings-btn');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
@@ -436,22 +399,16 @@ if (isHostPage) {
     if (savePasswordBtn) {
         savePasswordBtn.addEventListener('click', () => {
             const newPwd = document.getElementById('new-host-password').value;
-            if (newPwd.trim()) {
-                socket.emit('change-password', newPwd);
-            } else {
-                showToast('密碼不能為空');
-            }
+            if (newPwd.trim()) socket.emit('change-password', newPwd);
+            else showToast('密碼不能為空');
         });
     }
 
     if (saveHostNameBtn) {
         saveHostNameBtn.addEventListener('click', () => {
             const newName = document.getElementById('new-host-name').value;
-            if (newName.trim()) {
-                socket.emit('change-host-name', newName.trim());
-            } else {
-                showToast('暱稱不能為空');
-            }
+            if (newName.trim()) socket.emit('change-host-name', newName.trim());
+            else showToast('暱稱不能為空');
         });
     }
 
@@ -460,7 +417,6 @@ if (isHostPage) {
             const name = document.getElementById('new-preset-name').value;
             const question = document.getElementById('new-preset-question').value;
             const optionsStr = document.getElementById('new-preset-options').value;
-            
             if (name && question && optionsStr) {
                 const options = optionsStr.split(',').map(s => s.trim()).filter(s => s);
                 socket.emit('add-preset', { name, question, options });
@@ -498,10 +454,8 @@ if (isHostPage) {
         setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
         currentPin = data.pin; 
-        
         currentUsername = data.hostName || 'HOST';
         document.getElementById('new-host-name').value = currentUsername;
-
         socket.emit('join', { pin: data.pin, username: currentUsername }); 
         showToast('🔓 控制台已解鎖');
     });
@@ -579,10 +533,8 @@ if (isHostPage) {
     window.applyPreset = function(index) {
         if (!currentPresets[index]) return;
         const preset = currentPresets[index];
-        
         const qInput = document.getElementById('h-question');
         const optInputs = document.querySelectorAll('.opt-text');
-        
         qInput.value = preset.question;
         optInputs.forEach(i => i.value = '');
         preset.options.forEach((optText, i) => {
