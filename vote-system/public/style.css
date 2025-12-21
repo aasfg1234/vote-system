@@ -145,3 +145,43 @@ body.projector-mode .question { font-size: 3.5rem; margin-bottom: 60px; }
 body.projector-mode .option-card { pointer-events: none; padding: 30px; margin-bottom: 20px; }
 body.projector-mode .option-text { font-size: 1.5rem; }
 body.projector-mode .vote-stats { font-size: 1.5rem; }
+/* --- 新增：投票者名單標籤 (Host Only) --- */
+.voter-tags {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.voter-tag {
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-family: 'Noto Sans TC';
+}
+
+/* --- 新增：歷史紀錄區塊 --- */
+.history-section {
+    margin-top: 40px;
+    border-top: 2px dashed var(--border);
+    padding-top: 20px;
+}
+.history-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+    opacity: 0.8;
+}
+.history-title {
+    font-family: 'Noto Serif TC';
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: var(--text-main);
+}
+.history-stats {
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
