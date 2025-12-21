@@ -12,21 +12,16 @@
 </head>
 <body id="participant-page">
     <div class="container">
+        
         <div id="login-screen">
             <h1 style="text-align:center; margin-bottom:10px;">加入會議</h1>
-            <p style="text-align:center; margin-bottom:30px; color:var(--text-light); font-family:'Noto Serif TC'">Please enter your PIN</p>
-            <input type="number" id="pin-input" placeholder="0000" maxlength="4">
+            <p style="text-align:center; margin-bottom:30px; color:var(--text-light); font-family:'Noto Serif TC'">Please enter details</p>
+            
+            <input type="text" id="username-input" placeholder="您的姓名 / 暱稱" style="margin-bottom:10px; text-align:center;">
+            <input type="number" id="pin-input" placeholder="PIN 碼" maxlength="4">
             <button id="join-btn" class="btn">進入投票室</button>
         </div>
-<div id="login-screen">
-    <h1 style="text-align:center; margin-bottom:10px;">加入會議</h1>
-    <p style="text-align:center; margin-bottom:30px; color:var(--text-light); font-family:'Noto Serif TC'">Please enter details</p>
-    
-    <input type="text" id="username-input" placeholder="您的姓名 / 暱稱" style="margin-bottom:10px; text-align:center;">
-    
-    <input type="number" id="pin-input" placeholder="PIN 碼" maxlength="4">
-    <button id="join-btn" class="btn">進入投票室</button>
-</div>
+
         <div id="vote-screen" class="hidden">
             <div class="status-bar">
                 <span id="status-text">準備中</span>
@@ -45,10 +40,9 @@
             </p>
         </div>
     </div>
+    
     <div id="toast"></div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
-
-
