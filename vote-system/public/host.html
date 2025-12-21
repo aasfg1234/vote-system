@@ -95,17 +95,8 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
     <script>
-        // 主持人自動初始化
+        // 頁面載入後產生 QR Code
         window.addEventListener('load', () => {
-            setTimeout(() => {
-                const pin = document.getElementById('host-pin-display').textContent;
-                if(pin !== '----') {
-                    const socket = io();
-                    socket.emit('join', pin);
-                }
-            }, 500);
-
-            // 產生 QR Code
             let baseUrl = window.location.href.replace('/host.html', '').replace(/\/$/, '');
             const linkEl = document.getElementById('join-link');
             linkEl.textContent = baseUrl;
@@ -121,3 +112,6 @@
     </script>
 </body>
 </html>
+</body>
+</html>
+
