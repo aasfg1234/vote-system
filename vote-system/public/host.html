@@ -12,8 +12,19 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body id="host-page">
+    <div id="host-auth-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-paper); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="container" style="max-width:400px; text-align:center; padding:50px;">
+            <div style="font-size:3rem; margin-bottom:20px;">🔒</div>
+            <h2 style="margin-bottom:10px;">主持人驗證</h2>
+            <p style="color:var(--text-light); margin-bottom:30px; font-family:'Noto Serif TC'">請輸入管理密碼以解鎖控制台</p>
+            <input type="password" id="host-password-input" placeholder="Password" style="text-align:center; letter-spacing:3px; font-size:1.2rem; margin-bottom:20px;">
+            <button id="host-login-submit" class="btn">解鎖登入</button>
+            <p id="login-error-msg" style="color:var(--danger); margin-top:15px; opacity:0; transition:opacity 0.3s;">密碼錯誤</p>
+            <a href="index.html" style="display:block; margin-top:30px; color:var(--text-light); text-decoration:none; font-size:0.9rem;">← 返回首頁</a>
+        </div>
+    </div>
+
     <div class="host-grid">
-        
         <div class="container">
             <h2 style="margin-bottom:20px;">🎛 控制面板</h2>
             <div class="pin-badge">PIN: <span id="host-pin-display">----</span></div>
@@ -26,7 +37,6 @@
                         <button class="preset-btn" onclick="applyPreset('scale')">📊 評分</button>
                         <button class="preset-btn" onclick="applyPreset('lunch')">🍱 午餐</button>
                     </div>
-
                     <label>題目</label>
                     <input type="text" id="h-question" placeholder="請輸入討論議題..." value="範例：接下來的優先順序？">
                 </div>
@@ -82,8 +92,8 @@
                     <span id="status-text">等待中</span>
                     <span>
                         ⏱ <span id="timer">0s</span> | 
-                        👥 加入: <span id="joined-count">0</span> | 
-                        🗳️ 已投: <span id="total-votes">0</span>
+                        👥 <span id="joined-count">0</span> | 
+                        🗳️ <span id="total-votes">0</span>
                     </span>
                 </div>
                 <div id="question-text" class="question">等待發布...</div>
@@ -98,14 +108,11 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
-   <script>
-        // 頁面載入後產生 QR Code
+    <script>
         window.addEventListener('load', () => {
-            // 原本是取代 /host.html，現在我們要明確指向 /participant.html
+            // QR Code 直接導向 participant.html
             let baseUrl = window.location.href.replace('/host.html', '');
             if(baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-            
-            // 關鍵修改：讓 QR Code 直接導向 participant.html
             const targetUrl = baseUrl + '/participant.html';
 
             const linkEl = document.getElementById('join-link');
@@ -113,7 +120,7 @@
             linkEl.href = targetUrl;
 
             new QRCode(document.getElementById("qrcode"), {
-                text: targetUrl, // 掃描後直接進與會者頁面
+                text: targetUrl,
                 width: 120, height: 120,
                 colorDark : "#3f4238", colorLight : "#ffffff",
                 correctLevel : QRCode.CorrectLevel.H
