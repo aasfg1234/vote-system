@@ -33,7 +33,7 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// --- 1. 登入 ---
+// --- 1. 登入邏輯 ---
 joinBtn.addEventListener('click', () => {
     const pin = pinInput.value;
     if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
@@ -44,7 +44,7 @@ socket.on('joined', (data) => {
     if (data.success) {
         loginScreen.classList.add('hidden');
         voteScreen.classList.remove('hidden');
-        if (isHost && !isProjector) initHostLogic();
+        // 注意：這裡移除了 initHostLogic 的呼叫，避免無窮迴圈
     } else {
         showToast(data.error);
     }
@@ -70,11 +70,9 @@ function renderMeeting(state) {
     totalVotesEl.textContent = state.totalVotes;
     timerEl.textContent = state.timeLeft + 's';
 
-    // 彩帶特效
     if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
     lastStatus = state.status;
 
-    // 等待狀態：顯示金句
     if (state.status === 'waiting') {
         statusTextEl.textContent = '準備中';
         optionsContainer.innerHTML = `
@@ -106,7 +104,6 @@ function renderMeeting(state) {
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
-        // 印章特效 HTML
         const stampHtml = isSelected ? `<div class="stamp-mark">已選</div>` : '';
 
         html += `
@@ -131,8 +128,6 @@ function renderMeeting(state) {
 
 function handleVote(optionId) {
     if (statusTextEl.textContent.includes('結束')) return;
-    
-    // 手機震動回饋
     if (navigator.vibrate) navigator.vibrate(15);
 
     if (currentSettings.allowMulti) {
@@ -156,8 +151,15 @@ function launchConfetti() {
 
 // --- 3. 主持人邏輯 ---
 function initHostLogic() {
+    // 立即發送登入請求以獲取 PIN
     socket.emit('host-login');
-    socket.on('host-data', (data) => document.getElementById('host-pin-display').textContent = data.pin);
+    
+    socket.on('host-data', (data) => {
+        // 更新 PIN 顯示
+        document.getElementById('host-pin-display').textContent = data.pin;
+        // 自動加入會議室，這樣主持人也能收到倒數計時和預覽更新
+        socket.emit('join', data.pin);
+    });
 
     document.getElementById('start-vote-btn').addEventListener('click', () => {
         const question = document.getElementById('h-question').value;
@@ -186,27 +188,23 @@ function initHostLogic() {
         showToast('已強制結束');
     });
 
-    // 清空
     document.getElementById('clear-form-btn').addEventListener('click', () => {
         document.getElementById('h-question').value = '';
         document.querySelectorAll('.opt-text').forEach((input, i) => input.value = i<2 ? (i===0?'同意':'不同意') : '');
         showToast('表格已重置');
     });
 
-    // 匯出 CSV
     document.getElementById('export-btn').addEventListener('click', () => {
         socket.emit('request-export');
         showToast('正在準備檔案...');
     });
     
-    // 開啟投影視窗
     document.getElementById('open-projector-btn').addEventListener('click', () => {
         const url = window.location.href.replace('host.html', 'index.html') + '?mode=projector';
         window.open(url, 'ProjectorWindow', 'width=1024,height=768');
     });
 }
 
-// 接收 CSV
 socket.on('export-data', (csvContent) => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -218,7 +216,6 @@ socket.on('export-data', (csvContent) => {
     document.body.removeChild(link);
 });
 
-// 全域樣板函式
 window.applyPreset = function(type) {
     const qInput = document.getElementById('h-question');
     const optInputs = document.querySelectorAll('.opt-text');
@@ -238,3 +235,8 @@ window.applyPreset = function(type) {
     }
     showToast('已套用樣板');
 };
+
+// --- 關鍵修正：如果是主持人頁面，立即啟動邏輯 ---
+if (isHost && !isProjector) {
+    initHostLogic();
+}
