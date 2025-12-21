@@ -125,7 +125,7 @@ socket.on('connect', () => {
 socket.on('state-update', (state) => {
     // 主持人頁面：渲染監控區 + 歷史紀錄 + 樣板
     if (isHostPage) {
-        renderHostMonitor(state); // 新增的監控渲染函式
+        renderHostMonitor(state); 
         if (state.history) renderHistory(state.history);
         if (state.presets) renderPresets(state.presets);
         return; 
@@ -137,31 +137,25 @@ socket.on('state-update', (state) => {
     renderMeeting(state);
 });
 
-// --- 新增：主持人監控渲染函式 ---
+// --- 主持人監控渲染函式 (修改：顯示投票者名單) ---
 function renderHostMonitor(state) {
     if (!monitorOptionsEl) return;
 
-    // 更新數字
     if (monitorCountEl) monitorCountEl.textContent = state.joinedCount;
     if (monitorTotalEl) monitorTotalEl.textContent = state.totalVotes;
 
-    // 狀態為等待中
     if (state.status === 'waiting') {
         monitorOptionsEl.innerHTML = '<p style="text-align:center; font-size:0.8rem; color:#ccc;">等待發布...</p>';
         return;
     }
 
-    // 渲染選項條 (類似與會者畫面，但更精簡)
     let html = '';
-    
-    // 找出最高票 (為了標示)
     let maxVotes = 0;
     if (state.status === 'ended') {
         maxVotes = Math.max(...state.options.map(o => o.count));
     }
 
     state.options.forEach(opt => {
-        // 主持人永遠看到真實數據 (不用判斷 blindMode)
         const percent = opt.percent;
         const count = opt.count;
         
@@ -170,13 +164,25 @@ function renderHostMonitor(state) {
             highlightStyle = 'border: 2px solid var(--gold); background: #fffdf0;';
         }
 
+        // --- 產生投票者名單標籤 ---
+        let votersHtml = '';
+        if (state.hostVoterMap && state.hostVoterMap[opt.id] && state.hostVoterMap[opt.id].length > 0) {
+            votersHtml = '<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; position:relative; z-index:2;">';
+            state.hostVoterMap[opt.id].forEach(name => {
+                votersHtml += `<span style="background:#e2e8f0; color:#475569; font-size:0.75rem; padding:2px 6px; border-radius:4px;">${name}</span>`;
+            });
+            votersHtml += '</div>';
+        }
+        // -----------------------
+
         html += `
-        <div style="position:relative; margin-bottom:6px; padding:6px 10px; border:1px solid #eee; border-radius:3px; background:#fff; ${highlightStyle}">
+        <div style="position:relative; margin-bottom:6px; padding:8px 10px; border:1px solid #eee; border-radius:3px; background:#fff; ${highlightStyle}">
             <div style="position:absolute; top:0; left:0; bottom:0; width:${percent}%; background:${opt.color}; opacity:0.15; z-index:0;"></div>
             <div style="position:relative; z-index:1; display:flex; justify-content:space-between; font-size:0.85rem;">
                 <span style="font-weight:500;">${opt.text}</span>
                 <span style="color:var(--text-light);">${count} 票 (${percent}%)</span>
             </div>
+            ${votersHtml} 
         </div>`;
     });
 
