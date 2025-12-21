@@ -128,7 +128,7 @@ function broadcastState() {
         options: fullOptions,
         hostVoterMap: hostVoterMap, 
         history: meetingHistory,
-        presets: presets // 將最新的樣板列表傳給主持人
+        presets: presets 
     });
 
     if (meetingState.settings.blindMode && meetingState.status === 'voting') {
@@ -171,6 +171,32 @@ io.on('connection', (socket) => {
     // --- 主持人登入 (驗證變數密碼) ---
     socket.on('host-login', (inputPassword) => {
         if (inputPassword === hostPassword) {
+            
+            // 🔥 關鍵修改：如果上一場會議已結束，自動開啟新的一場
+            if (meetingState.status === 'terminated') {
+                console.log('Previous meeting ended. Starting a FRESH meeting...');
+                
+                // 1. 強制讓還留在舊房間的人斷線 (避免他們看到新房間的等待畫面)
+                // 當他們斷線重連時，因為 PIN 碼變了，會被踢回首頁，這正是我們要的
+                io.in('meeting-room').disconnectSockets();
+
+                // 2. 產生全新 PIN 碼與重置狀態
+                meetingState = {
+                    pin: Math.floor(1000 + Math.random() * 9000).toString(),
+                    status: 'waiting', 
+                    question: '',
+                    options: [],
+                    settings: { allowMulti: false, blindMode: false, duration: 0 },
+                    timer: null,
+                    endTime: null,
+                    voteId: 0 
+                };
+
+                // 3. 清空歷史紀錄 (新會議就要有乾淨的開始)
+                meetingHistory = [];
+                voterRecords.clear();
+            }
+
             socket.join('host-room'); 
             socket.emit('host-login-success', { pin: meetingState.pin });
             socket.join('meeting-room');
@@ -180,17 +206,14 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 修改密碼 ---
     socket.on('change-password', (newPwd) => {
         hostPassword = newPwd;
-        // 通知主持人密碼已更新
         socket.emit('password-updated');
     });
 
-    // --- 新增樣板 ---
     socket.on('add-preset', (newPreset) => {
         presets.push(newPreset);
-        broadcastState(); // 廣播讓前端更新按鈕列表
+        broadcastState(); 
     });
 
     socket.on('start-vote', (data) => {
