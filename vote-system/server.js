@@ -7,29 +7,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// --- 設定 (改成 let 以便修改) ---
+// --- 設定 ---
 let hostPassword = process.env.HOST_PASSWORD || '8888';
-let hostName = 'HOST'; // 新增：主持人暱稱
+let hostName = 'HOST';
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- 預設樣板資料 ---
+// --- 預設樣板 ---
 let presets = [
-    {
-        name: "⭕ 是非題",
-        question: "您是否同意此提案？",
-        options: ["⭕ 同意", "❌ 不同意"]
-    },
-    {
-        name: "📊 評分題",
-        question: "請對本次活動進行評分",
-        options: ["⭐️⭐️⭐️⭐️⭐️ 非常滿意", "⭐️⭐️⭐️⭐️ 滿意", "⭐️⭐️⭐️ 普通", "⭐️⭐️ 尚可", "⭐️ 待加強"]
-    },
-    {
-        name: "🍱 午餐題",
-        question: "今天午餐想吃什麼類別？",
-        options: ["🍱 便當/自助餐", "🍜 麵食/水餃", "🍔 速食", "🥗 輕食/沙拉"]
-    }
+    { name: "⭕ 是非題", question: "您是否同意此提案？", options: ["⭕ 同意", "❌ 不同意"] },
+    { name: "📊 評分題", question: "請對本次活動進行評分", options: ["⭐️⭐️⭐️⭐️⭐️ 非常滿意", "⭐️⭐️⭐️⭐️ 滿意", "⭐️⭐️⭐️ 普通", "⭐️⭐️ 尚可", "⭐️ 待加強"] },
+    { name: "🍱 午餐題", question: "今天午餐想吃什麼類別？", options: ["🍱 便當/自助餐", "🍜 麵食/水餃", "🍔 速食", "🥗 輕食/沙拉"] }
 ];
 
 // --- 系統狀態 ---
@@ -44,16 +32,12 @@ let meetingState = {
     voteId: 0 
 };
 
-// --- 會議歷史紀錄 ---
 let meetingHistory = []; 
-
-// Key: username, Value: [optionId...]
 const voterRecords = new Map();
 
 // --- 歸檔功能 ---
 function archiveCurrentVote() {
     if (!meetingState.question) return;
-
     const snapshot = {
         question: meetingState.question,
         options: JSON.parse(JSON.stringify(meetingState.options)), 
@@ -61,7 +45,6 @@ function archiveCurrentVote() {
         totalVotes: 0,
         voterDetails: {} 
     };
-
     let total = 0;
     voterRecords.forEach((votes, username) => {
         if (votes && votes.length > 0) {
@@ -70,11 +53,10 @@ function archiveCurrentVote() {
         }
     });
     snapshot.totalVotes = total;
-
     meetingHistory.push(snapshot);
 }
 
-// --- 廣播狀態 ---
+// --- 廣播狀態 (關鍵修改：排除主持人人數) ---
 function broadcastState() {
     let totalVotes = 0;
     meetingState.options.forEach(opt => opt.count = 0);
@@ -95,8 +77,20 @@ function broadcastState() {
         }
     });
 
-    const room = io.sockets.adapter.rooms.get('meeting-room');
-    const joinedCount = room ? room.size : 0;
+    // --- 關鍵修改：計算真實與會者人數 ---
+    const allSockets = io.sockets.adapter.rooms.get('meeting-room');
+    const hostSockets = io.sockets.adapter.rooms.get('host-room');
+    let realUserCount = 0;
+
+    if (allSockets) {
+        allSockets.forEach(socketId => {
+            // 如果這個 Socket ID 不在主持人房間內，才算是一個與會者
+            if (!hostSockets || !hostSockets.has(socketId)) {
+                realUserCount++;
+            }
+        });
+    }
+    // ------------------------------------
 
     const fullOptions = meetingState.options.map(opt => ({
         id: opt.id,
@@ -118,7 +112,7 @@ function broadcastState() {
         status: meetingState.status,
         question: meetingState.question,
         totalVotes: totalVotes,
-        joinedCount: joinedCount,
+        joinedCount: realUserCount, // 使用過濾後的人數
         settings: meetingState.settings,
         timeLeft: meetingState.endTime ? Math.max(0, Math.round((meetingState.endTime - Date.now())/1000)) : 0,
         voteId: meetingState.voteId
@@ -151,7 +145,7 @@ io.on('connection', (socket) => {
         const pin = typeof data === 'object' ? data.pin : data;
         const username = typeof data === 'object' ? data.username : null;
 
-        if (meetingState.status === 'terminated' && username !== hostName) { // 修改：比對 hostName
+        if (meetingState.status === 'terminated' && username !== hostName) {
             socket.emit('joined', { success: false, error: '會議已結束' });
             return;
         }
@@ -159,7 +153,9 @@ io.on('connection', (socket) => {
         if (pin === meetingState.pin) {
             socket.join('meeting-room');
             socket.emit('joined', { success: true });
-            if (username && meetingState.status === 'voting') {
+            
+            // 如果是主持人重連，不需要恢復投票狀態
+            if (username && username !== hostName && meetingState.status === 'voting') {
                 const previousVotes = voterRecords.get(username);
                 if (previousVotes) socket.emit('vote-confirmed', previousVotes);
             }
@@ -169,12 +165,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 主持人登入 ---
     socket.on('host-login', (inputPassword) => {
         if (inputPassword === hostPassword) {
-            
             if (meetingState.status === 'terminated') {
-                console.log('Previous meeting ended. Starting a FRESH meeting...');
                 io.in('meeting-room').disconnectSockets();
                 meetingState = {
                     pin: Math.floor(1000 + Math.random() * 9000).toString(),
@@ -191,9 +184,10 @@ io.on('connection', (socket) => {
             }
 
             socket.join('host-room'); 
-            // 修改：回傳目前的 hostName
+            // 主持人也加入 meeting-room 以便接收廣播，但會在計數時被排除
+            socket.join('meeting-room'); 
+            
             socket.emit('host-login-success', { pin: meetingState.pin, hostName: hostName });
-            socket.join('meeting-room');
             broadcastState(); 
         } else {
             socket.emit('host-login-fail');
@@ -205,7 +199,6 @@ io.on('connection', (socket) => {
         socket.emit('password-updated');
     });
 
-    // --- 新增：修改主持人暱稱 ---
     socket.on('change-host-name', (newName) => {
         hostName = newName;
         socket.emit('host-name-updated', hostName);
@@ -220,7 +213,6 @@ io.on('connection', (socket) => {
         if (meetingState.question && meetingState.status !== 'waiting' && meetingState.status !== 'terminated') {
             archiveCurrentVote();
         }
-
         resetVotes();
         meetingState.status = 'voting';
         meetingState.question = data.question;
@@ -270,10 +262,18 @@ io.on('connection', (socket) => {
         broadcastState();
     });
 
+    // --- 關鍵修改：主持人不能投票 ---
     socket.on('submit-vote', (data) => {
         if (meetingState.status !== 'voting') return;
         const votes = data.votes;
         const username = data.username;
+        
+        // 安全檢查：如果是主持人，直接忽略
+        // 判斷方式： socket 是否在 host-room 中
+        if (socket.rooms.has('host-room')) {
+            return;
+        }
+
         if (!username) return; 
         voterRecords.set(username, Array.isArray(votes) ? votes : [votes]);
         broadcastState();
@@ -282,7 +282,6 @@ io.on('connection', (socket) => {
 
     socket.on('request-export', () => {
         let csvContent = "\uFEFF題目,選項,票數,投票者名單\n"; 
-        
         meetingHistory.forEach(record => {
             record.options.forEach(opt => {
                 const voters = [];
@@ -305,7 +304,6 @@ io.on('connection', (socket) => {
                     currentVoterMap[optId].push(username);
                 });
             });
-
             meetingState.options.forEach(opt => {
                 const voters = currentVoterMap[opt.id] || [];
                 const safeQ = meetingState.question.replace(/"/g, '""');
@@ -314,7 +312,6 @@ io.on('connection', (socket) => {
                 csvContent += `"[當前] ${safeQ}","${safeOpt}",${opt.count},"${safeVoters}"\n`;
             });
         }
-        
         socket.emit('export-data', csvContent);
     });
 
