@@ -8,7 +8,7 @@ const joinBtn = document.getElementById('join-btn');
 const questionEl = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
 const totalVotesEl = document.getElementById('total-votes');
-const joinedCountEl = document.getElementById('joined-count'); // 新增
+const joinedCountEl = document.getElementById('joined-count'); 
 const timerEl = document.getElementById('timer');
 const statusTextEl = document.getElementById('status-text');
 const toastEl = document.getElementById('toast');
@@ -16,7 +16,10 @@ const toastEl = document.getElementById('toast');
 let myVotes = [];
 let currentSettings = {};
 let lastStatus = 'waiting';
-let isHost = document.body.id === 'host-page';
+
+// 判斷目前是哪個頁面
+const isHostPage = document.body.id === 'host-page';
+const isParticipantPage = document.body.id === 'participant-page';
 
 // 投影模式檢測
 const urlParams = new URLSearchParams(window.location.search);
@@ -34,24 +37,37 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// --- 1. 登入邏輯 ---
-joinBtn.addEventListener('click', () => {
-    const pin = pinInput.value;
-    if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
-    socket.emit('join', pin);
-});
-
-socket.on('joined', (data) => {
-    if (data.success) {
-        loginScreen.classList.add('hidden');
-        voteScreen.classList.remove('hidden');
-    } else {
-        showToast(data.error);
+// --- 1. 與會者邏輯 (僅在與會者頁面或投影模式執行) ---
+if (isParticipantPage) {
+    if (joinBtn) {
+        joinBtn.addEventListener('click', () => {
+            const pin = pinInput.value;
+            if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
+            socket.emit('join', pin);
+        });
     }
-});
 
-// --- 2. 狀態渲染 ---
+    socket.on('joined', (data) => {
+        if (data.success) {
+            loginScreen.classList.add('hidden');
+            voteScreen.classList.remove('hidden');
+        } else {
+            showToast(data.error);
+        }
+    });
+
+    // 投影模式自動登入 (需手動從 URL 或 Host 端傳遞 PIN，此處簡化為需手動輸入)
+    // 實際上投影模式是從 Host 打開的，通常 Host 已登入。
+    // 但因為投影視窗是新視窗，視為新 Client。
+    // 建議投影模式直接顯示 "請掃描 QR Code"，只在 Host 端顯示結果即可。
+    // 但為了讓投影也能顯示結果，我們保留 Socket 監聽。
+}
+
+// --- 2. 狀態渲染 (通用) ---
 socket.on('state-update', (state) => {
+    // 只有在投票畫面或主持人預覽畫面才渲染
+    if (!voteScreen && !isHostPage) return; 
+    
     renderMeeting(state);
 });
 
@@ -61,39 +77,43 @@ socket.on('vote-confirmed', (votes) => {
 });
 
 socket.on('timer-tick', (timeLeft) => {
-    timerEl.textContent = timeLeft + 's';
-    timerEl.style.color = timeLeft <= 10 ? 'var(--danger)' : 'inherit';
+    if(timerEl) {
+        timerEl.textContent = timeLeft + 's';
+        timerEl.style.color = timeLeft <= 10 ? 'var(--danger)' : 'inherit';
+    }
 });
 
 function renderMeeting(state) {
     currentSettings = state.settings;
-    totalVotesEl.textContent = state.totalVotes;
+    if(totalVotesEl) totalVotesEl.textContent = state.totalVotes;
     if(joinedCountEl) joinedCountEl.textContent = state.joinedCount; // 更新加入人數
-    timerEl.textContent = state.timeLeft + 's';
+    if(timerEl) timerEl.textContent = state.timeLeft + 's';
 
     if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
     lastStatus = state.status;
 
     if (state.status === 'waiting') {
-        statusTextEl.textContent = '準備中';
-        optionsContainer.innerHTML = `
+        if(statusTextEl) statusTextEl.textContent = '準備中';
+        if(optionsContainer) optionsContainer.innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
             </div>`;
-        questionEl.textContent = '';
+        if(questionEl) questionEl.textContent = '';
         return;
     }
     
-    questionEl.textContent = state.question;
+    if(questionEl) questionEl.textContent = state.question;
 
-    if (state.status === 'voting') {
-        statusTextEl.textContent = currentSettings.blindMode ? '投票進行中 (🙈 盲測)' : '投票進行中';
-        statusTextEl.style.color = currentSettings.blindMode ? '#d97706' : 'var(--success)';
-    } else {
-        statusTextEl.textContent = '投票結束 (已鎖定)';
-        statusTextEl.style.color = 'var(--danger)';
+    if(statusTextEl) {
+        if (state.status === 'voting') {
+            statusTextEl.textContent = currentSettings.blindMode ? '投票進行中 (🙈 盲測)' : '投票進行中';
+            statusTextEl.style.color = currentSettings.blindMode ? '#d97706' : 'var(--success)';
+        } else {
+            statusTextEl.textContent = '投票結束 (已鎖定)';
+            statusTextEl.style.color = 'var(--danger)';
+        }
     }
 
     let html = '';
@@ -120,15 +140,16 @@ function renderMeeting(state) {
         </div>`;
     });
     
-    optionsContainer.innerHTML = html;
-    
-    if (state.status === 'ended') {
-        Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
+    if(optionsContainer) {
+        optionsContainer.innerHTML = html;
+        if (state.status === 'ended') {
+            Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
+        }
     }
 }
 
 function handleVote(optionId) {
-    if (statusTextEl.textContent.includes('結束')) return;
+    if (statusTextEl && statusTextEl.textContent.includes('結束')) return;
     if (navigator.vibrate) navigator.vibrate(15);
 
     if (currentSettings.allowMulti) {
@@ -141,35 +162,56 @@ function handleVote(optionId) {
 }
 
 function showToast(msg) {
+    if(!toastEl) return;
     toastEl.textContent = msg;
     toastEl.style.opacity = '1';
     setTimeout(() => toastEl.style.opacity = '0', 2000);
 }
 
 function launchConfetti() {
-    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+    if(typeof confetti === 'function') {
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+    }
 }
 
-// --- 3. 主持人邏輯 ---
-function initHostLogic() {
-    // 立即發送登入請求以獲取 PIN
-    socket.emit('host-login');
-    
-    socket.on('host-data', (data) => {
-        // 更新 PIN 顯示
+// --- 3. 主持人邏輯 (僅在主持人頁面執行) ---
+if (isHostPage) {
+    const authOverlay = document.getElementById('host-auth-overlay');
+    const pwdInput = document.getElementById('host-password-input');
+    const loginBtn = document.getElementById('host-login-submit');
+    const errorMsg = document.getElementById('login-error-msg');
+
+    function attemptLogin() {
+        const pwd = pwdInput.value;
+        if (!pwd) return;
+        socket.emit('host-login', pwd);
+    }
+
+    loginBtn.addEventListener('click', attemptLogin);
+    pwdInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') attemptLogin(); });
+
+    socket.on('host-login-success', (data) => {
+        authOverlay.style.opacity = '0';
+        setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
-        // 自動加入會議室，這樣主持人也能收到倒數計時和預覽更新
-        socket.emit('join', data.pin);
+        showToast('🔓 控制台已解鎖');
     });
 
+    socket.on('host-login-fail', () => {
+        errorMsg.style.opacity = '1';
+        pwdInput.value = '';
+        pwdInput.focus();
+        pwdInput.style.animation = 'shake 0.5s';
+        setTimeout(() => pwdInput.style.animation = '', 500);
+    });
+
+    // 主持人控制功能
     document.getElementById('start-vote-btn').addEventListener('click', () => {
         const question = document.getElementById('h-question').value;
         if(!question) return showToast('請輸入題目');
-
         const optInputs = document.querySelectorAll('.opt-text');
         const options = [];
         const colors = ['#84a98c', '#6b705c', '#d66853', '#ddbea9', '#3f4238', '#8e8d8a'];
-        
         optInputs.forEach((input, idx) => {
             if(input.value.trim()) options.push({ text: input.value, color: colors[idx % colors.length] });
         });
@@ -200,46 +242,41 @@ function initHostLogic() {
         showToast('正在準備檔案...');
     });
     
-document.getElementById('open-projector-btn').addEventListener('click', () => {
-        // 修改這裡：原本是 index.html，現在要改成 participant.html
+    document.getElementById('open-projector-btn').addEventListener('click', () => {
+        // 修正：投影模式指向 participant.html
         const url = window.location.href.replace('host.html', 'participant.html') + '?mode=projector';
         window.open(url, 'ProjectorWindow', 'width=1024,height=768');
     });
-}
 
-socket.on('export-data', (csvContent) => {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `投票結果_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-});
+    socket.on('export-data', (csvContent) => {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `投票結果_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
 
-window.applyPreset = function(type) {
-    const qInput = document.getElementById('h-question');
-    const optInputs = document.querySelectorAll('.opt-text');
-    qInput.value = ''; optInputs.forEach(i => i.value = '');
-
-    if (type === 'yesno') {
-        qInput.value = '您是否同意此提案？';
-        optInputs[0].value = '⭕ 同意'; optInputs[1].value = '❌ 不同意';
-    } else if (type === 'scale') {
-        qInput.value = '請對本次活動進行評分';
-        optInputs[0].value = '⭐️⭐️⭐️⭐️⭐️ 非常滿意'; optInputs[1].value = '⭐️⭐️⭐️⭐️ 滿意';
-        optInputs[2].value = '⭐️⭐️⭐️ 普通'; optInputs[3].value = '⭐️⭐️ 尚可'; optInputs[4].value = '⭐️ 待加強';
-    } else if (type === 'lunch') {
-        qInput.value = '今天午餐想吃什麼類別？';
-        optInputs[0].value = '🍱 便當/自助餐'; optInputs[1].value = '🍜 麵食/水餃';
-        optInputs[2].value = '🍔 速食'; optInputs[3].value = '🥗 輕食/沙拉';
-    }
-    showToast('已套用樣板');
-};
-
-// --- 關鍵修正：如果是主持人頁面，立即啟動邏輯 ---
-if (isHost && !isProjector) {
-    initHostLogic();
+    // 樣板功能
+    window.applyPreset = function(type) {
+        const qInput = document.getElementById('h-question');
+        const optInputs = document.querySelectorAll('.opt-text');
+        qInput.value = ''; optInputs.forEach(i => i.value = '');
+        if (type === 'yesno') {
+            qInput.value = '您是否同意此提案？';
+            optInputs[0].value = '⭕ 同意'; optInputs[1].value = '❌ 不同意';
+        } else if (type === 'scale') {
+            qInput.value = '請對本次活動進行評分';
+            optInputs[0].value = '⭐️⭐️⭐️⭐️⭐️ 非常滿意'; optInputs[1].value = '⭐️⭐️⭐️⭐️ 滿意';
+            optInputs[2].value = '⭐️⭐️⭐️ 普通'; optInputs[3].value = '⭐️⭐️ 尚可'; optInputs[4].value = '⭐️ 待加強';
+        } else if (type === 'lunch') {
+            qInput.value = '今天午餐想吃什麼類別？';
+            optInputs[0].value = '🍱 便當/自助餐'; optInputs[1].value = '🍜 麵食/水餃';
+            optInputs[2].value = '🍔 速食'; optInputs[3].value = '🥗 輕食/沙拉';
+        }
+        showToast('已套用樣板');
+    };
 }
 
