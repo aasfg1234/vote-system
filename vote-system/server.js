@@ -7,12 +7,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// --- 設定 ---
+const HOST_PASSWORD = process.env.HOST_PASSWORD || '8888'; // 主持人密碼
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- 系統狀態 ---
 let meetingState = {
     pin: Math.floor(1000 + Math.random() * 9000).toString(),
-    status: 'waiting', // waiting, voting, ended
+    status: 'waiting',
     question: '',
     options: [],
     settings: {
@@ -30,11 +32,11 @@ const userVotes = new Map();
 function broadcastState() {
     const totalVotes = userVotes.size;
 
-    // 計算目前連線人數 (加入人數)
+    // 計算加入人數 (meeting-room 內的人數)
     const room = io.sockets.adapter.rooms.get('meeting-room');
     const joinedCount = room ? room.size : 0;
 
-    // 1. 完整數據 (給主持人 & 結束後所有人)
+    // 1. 完整數據
     const fullOptions = meetingState.options.map(opt => ({
         id: opt.id,
         text: opt.text,
@@ -43,30 +45,29 @@ function broadcastState() {
         percent: totalVotes === 0 ? 0 : Math.round((opt.count / totalVotes) * 100)
     }));
 
-    // 2. 遮蔽數據 (給盲測時的與會者)
+    // 2. 遮蔽數據 (盲測用)
     const blindedOptions = meetingState.options.map(opt => ({
         id: opt.id,
         text: opt.text,
         color: opt.color,
-        count: -1,   // 隱藏標記
-        percent: -1  // 隱藏標記
+        count: -1,
+        percent: -1
     }));
 
     const basePayload = {
         status: meetingState.status,
         question: meetingState.question,
         totalVotes: totalVotes,
-        joinedCount: joinedCount, // 傳送加入人數
+        joinedCount: joinedCount, // 新增：加入人數
         settings: meetingState.settings,
         timeLeft: meetingState.endTime ? Math.max(0, Math.round((meetingState.endTime - Date.now())/1000)) : 0
     };
 
+    // 盲測分流邏輯
     if (meetingState.settings.blindMode && meetingState.status === 'voting') {
-        // A. 盲測進行中：分流發送
         io.to('host-room').emit('state-update', { ...basePayload, options: fullOptions });
         io.except('host-room').emit('state-update', { ...basePayload, options: blindedOptions });
     } else {
-        // B. 一般情況：所有人看到全部
         io.emit('state-update', { ...basePayload, options: fullOptions });
     }
 }
@@ -76,10 +77,10 @@ function resetVotes() {
     meetingState.options.forEach(opt => opt.count = 0);
 }
 
-// --- Socket 連線邏輯 ---
+// --- Socket 連線 ---
 io.on('connection', (socket) => {
     
-    // 1. 加入會議
+    // 1. 加入會議 (與會者)
     socket.on('join', (pin) => {
         if (pin === meetingState.pin) {
             socket.join('meeting-room');
@@ -90,11 +91,17 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 2. 主持人登入
-    socket.on('host-login', () => {
-        socket.join('host-room'); 
-        socket.emit('host-data', { pin: meetingState.pin });
-        broadcastState(); 
+    // 2. 主持人登入 (含密碼驗證)
+    socket.on('host-login', (inputPassword) => {
+        if (inputPassword === HOST_PASSWORD) {
+            socket.join('host-room'); 
+            socket.emit('host-login-success', { pin: meetingState.pin });
+            // 主持人也加入 meeting-room 以接收數據更新
+            socket.join('meeting-room');
+            broadcastState(); 
+        } else {
+            socket.emit('host-login-fail');
+        }
     });
 
     // 3. 開始投票
@@ -124,14 +131,11 @@ io.on('connection', (socket) => {
             meetingState.endTime = null;
             if (meetingState.timer) clearInterval(meetingState.timer);
         }
-
         broadcastState();
     });
 
     // 4. 結束投票
-    socket.on('stop-vote', () => {
-        stopVoting();
-    });
+    socket.on('stop-vote', () => stopVoting());
 
     function stopVoting() {
         if (meetingState.timer) clearInterval(meetingState.timer);
@@ -140,7 +144,7 @@ io.on('connection', (socket) => {
         broadcastState();
     }
 
-    // 5. 投票與改票
+    // 5. 提交投票
     socket.on('submit-vote', (selectedOptionIds) => {
         if (meetingState.status !== 'voting') return;
 
@@ -168,25 +172,18 @@ io.on('connection', (socket) => {
     socket.on('request-export', () => {
         const headers = "\uFEFF題目,選項,票數,百分比\n"; 
         const totalVotes = userVotes.size;
-        
         const rows = meetingState.options.map(opt => {
             const percent = totalVotes === 0 ? 0 : Math.round((opt.count / totalVotes) * 100);
             const safeQuestion = meetingState.question.replace(/"/g, '""');
             const safeText = opt.text.replace(/"/g, '""');
             return `"${safeQuestion}","${safeText}",${opt.count},${percent}%`;
         }).join("\n");
-        
         socket.emit('export-data', headers + rows);
     });
 
-    // 7. 斷線處理 (更新人數)
-    socket.on('disconnect', () => {
-        broadcastState();
-    });
+    // 7. 斷線處理
+    socket.on('disconnect', () => broadcastState());
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
