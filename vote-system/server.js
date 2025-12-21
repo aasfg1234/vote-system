@@ -8,7 +8,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 // --- 設定 ---
-const HOST_PASSWORD = process.env.HOST_PASSWORD || '8888'; // 主持人密碼
+const HOST_PASSWORD = process.env.HOST_PASSWORD || '8888';
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- 系統狀態 ---
@@ -26,13 +26,29 @@ let meetingState = {
     endTime: null
 };
 
-const userVotes = new Map();
+// 重點修改：改用 deviceId 來存票，而不是 socket.id
+// Key: deviceId (String), Value: [optionId1, optionId2...]
+const deviceVotes = new Map();
 
 // --- 廣播狀態 ---
 function broadcastState() {
-    const totalVotes = userVotes.size;
+    // 計算總票數 (根據 deviceVotes 的大小)
+    let totalVotes = 0;
+    // 歸零選項計數
+    meetingState.options.forEach(opt => opt.count = 0);
 
-    // 計算加入人數 (meeting-room 內的人數)
+    // 重新統計所有裝置的投票
+    deviceVotes.forEach((votes) => {
+        if (votes && votes.length > 0) {
+            totalVotes++; // 有效投票的裝置數
+            votes.forEach(optId => {
+                const opt = meetingState.options.find(o => o.id === optId);
+                if (opt) opt.count++;
+            });
+        }
+    });
+
+    // 計算加入人數
     const room = io.sockets.adapter.rooms.get('meeting-room');
     const joinedCount = room ? room.size : 0;
 
@@ -45,7 +61,7 @@ function broadcastState() {
         percent: totalVotes === 0 ? 0 : Math.round((opt.count / totalVotes) * 100)
     }));
 
-    // 2. 遮蔽數據 (盲測用)
+    // 2. 遮蔽數據
     const blindedOptions = meetingState.options.map(opt => ({
         id: opt.id,
         text: opt.text,
@@ -58,12 +74,11 @@ function broadcastState() {
         status: meetingState.status,
         question: meetingState.question,
         totalVotes: totalVotes,
-        joinedCount: joinedCount, // 新增：加入人數
+        joinedCount: joinedCount,
         settings: meetingState.settings,
         timeLeft: meetingState.endTime ? Math.max(0, Math.round((meetingState.endTime - Date.now())/1000)) : 0
     };
 
-    // 盲測分流邏輯
     if (meetingState.settings.blindMode && meetingState.status === 'voting') {
         io.to('host-room').emit('state-update', { ...basePayload, options: fullOptions });
         io.except('host-room').emit('state-update', { ...basePayload, options: blindedOptions });
@@ -73,30 +88,41 @@ function broadcastState() {
 }
 
 function resetVotes() {
-    userVotes.clear();
+    deviceVotes.clear(); // 清空裝置投票紀錄
     meetingState.options.forEach(opt => opt.count = 0);
 }
 
 // --- Socket 連線 ---
 io.on('connection', (socket) => {
     
-    // 1. 加入會議 (與會者)
-    socket.on('join', (pin) => {
+    // 1. 加入會議 (接收 pin 和 deviceId)
+    socket.on('join', (data) => {
+        // 相容性處理：data 可能是物件 {pin, deviceId} 或純字串 pin
+        const pin = typeof data === 'object' ? data.pin : data;
+        const deviceId = typeof data === 'object' ? data.deviceId : null;
+
         if (pin === meetingState.pin) {
             socket.join('meeting-room');
             socket.emit('joined', { success: true });
+
+            // 重點：如果這個裝置之前投過票，把票還給他 (解決重新整理後選項消失的問題)
+            if (deviceId && meetingState.status === 'voting') {
+                const previousVotes = deviceVotes.get(deviceId);
+                if (previousVotes) {
+                    socket.emit('vote-confirmed', previousVotes);
+                }
+            }
             broadcastState();
         } else {
             socket.emit('joined', { success: false, error: 'PIN 碼錯誤' });
         }
     });
 
-    // 2. 主持人登入 (含密碼驗證)
+    // 2. 主持人登入
     socket.on('host-login', (inputPassword) => {
         if (inputPassword === HOST_PASSWORD) {
             socket.join('host-room'); 
             socket.emit('host-login-success', { pin: meetingState.pin });
-            // 主持人也加入 meeting-room 以接收數據更新
             socket.join('meeting-room');
             broadcastState(); 
         } else {
@@ -144,34 +170,29 @@ io.on('connection', (socket) => {
         broadcastState();
     }
 
-    // 5. 提交投票
-    socket.on('submit-vote', (selectedOptionIds) => {
+    // 5. 提交投票 (接收 votes 和 deviceId)
+    socket.on('submit-vote', (data) => {
         if (meetingState.status !== 'voting') return;
 
-        const previousVotes = userVotes.get(socket.id);
-        if (previousVotes) {
-            previousVotes.forEach(optId => {
-                const opt = meetingState.options.find(o => o.id === optId);
-                if (opt && opt.count > 0) opt.count--;
-            });
-        }
+        const votes = data.votes;
+        const deviceId = data.deviceId;
 
-        const newVotes = Array.isArray(selectedOptionIds) ? selectedOptionIds : [selectedOptionIds];
-        userVotes.set(socket.id, newVotes);
+        if (!deviceId) return; // 沒有 ID 不給投
+
+        // 直接用 deviceId 覆蓋舊的投票 (一個人只能有一筆紀錄)
+        deviceVotes.set(deviceId, Array.isArray(votes) ? votes : [votes]);
         
-        newVotes.forEach(optId => {
-            const opt = meetingState.options.find(o => o.id === optId);
-            if (opt) opt.count++;
-        });
-
         broadcastState();
-        socket.emit('vote-confirmed', newVotes);
+        socket.emit('vote-confirmed', votes);
     });
 
     // 6. 匯出 CSV
     socket.on('request-export', () => {
+        // CSV 邏輯 (選項計數已在 broadcastState 計算過，直接用 meetingState.options)
+        // 為了確保準確，重新跑一次計算邏輯
+        const totalVotes = Array.from(deviceVotes.values()).filter(v => v.length > 0).length;
+        
         const headers = "\uFEFF題目,選項,票數,百分比\n"; 
-        const totalVotes = userVotes.size;
         const rows = meetingState.options.map(opt => {
             const percent = totalVotes === 0 ? 0 : Math.round((opt.count / totalVotes) * 100);
             const safeQuestion = meetingState.question.replace(/"/g, '""');
@@ -181,7 +202,6 @@ io.on('connection', (socket) => {
         socket.emit('export-data', headers + rows);
     });
 
-    // 7. 斷線處理
     socket.on('disconnect', () => broadcastState());
 });
 
