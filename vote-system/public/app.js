@@ -1,17 +1,15 @@
 const socket = io();
 
-// --- 隱藏捲軸邏輯 (新增) ---
+// --- 隱藏捲軸邏輯 ---
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('clean') === 'true') {
     const style = document.createElement('style');
-    // 這段 CSS 會隱藏各種瀏覽器的捲軸，但保留捲動功能 (如果需要的話)
     style.innerHTML = `
         ::-webkit-scrollbar { display: none; }
         body { -ms-overflow-style: none; scrollbar-width: none; }
     `;
     document.head.appendChild(style);
 }
-// ----------------------------
 
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
@@ -81,7 +79,7 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// 自動登入 (只在與會者頁面執行)
+// 自動登入
 if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
@@ -135,24 +133,19 @@ socket.on('connect', () => {
 });
 
 socket.on('state-update', (state) => {
-    // 主持人頁面：渲染監控區 + 歷史紀錄 + 樣板
     if (isHostPage) {
         renderHostMonitor(state); 
         if (state.history) renderHistory(state.history);
         if (state.presets) renderPresets(state.presets);
         return; 
     }
-
-    // 與會者頁面
     if (!voteScreen) return; 
     lastServerState = state;
     renderMeeting(state);
 });
 
-// --- 主持人監控渲染函式 ---
 function renderHostMonitor(state) {
     if (!monitorOptionsEl) return;
-
     if (monitorCountEl) monitorCountEl.textContent = state.joinedCount;
     if (monitorTotalEl) monitorTotalEl.textContent = state.totalVotes;
 
@@ -170,7 +163,6 @@ function renderHostMonitor(state) {
     state.options.forEach(opt => {
         const percent = opt.percent;
         const count = opt.count;
-        
         let highlightStyle = '';
         if (state.status === 'ended' && maxVotes > 0 && count === maxVotes) {
             highlightStyle = 'border: 2px solid var(--gold); background: #fffdf0;';
@@ -195,10 +187,8 @@ function renderHostMonitor(state) {
             ${votersHtml} 
         </div>`;
     });
-
     monitorOptionsEl.innerHTML = html;
 }
-// ----------------------------
 
 socket.on('vote-confirmed', (votes) => {
     myVotes = votes;
@@ -274,7 +264,6 @@ function renderMeeting(state) {
         const displayWidth = isBlind ? 0 : opt.percent;
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
-        
         let resultClass = '';
         let crownHtml = '';
         if (state.status === 'ended' && maxVotes > 0) {
@@ -382,7 +371,7 @@ function renderPresets(presets) {
     currentPresets = presets; 
     let html = '';
     presets.forEach((preset, index) => {
-        html += `<button class="preset-btn" onclick="applyPreset(${index})">${preset.name}</button>`;
+        html += `<button class="preset-btn" type="button" onclick="applyPreset(${index})">${preset.name}</button>`;
     });
     presetButtonsContainer.innerHTML = html;
 }
@@ -575,10 +564,8 @@ if (isHostPage) {
         showToast('正在準備檔案...');
     });
     
-    document.getElementById('open-projector-btn').addEventListener('click', () => {
-        const url = window.location.href.replace('host.html', 'participant.html') + '?mode=projector';
-        window.open(url, 'ProjectorWindow', 'width=1024,height=768');
-    });
+    // --- 關鍵修改：移除了 open-projector-btn 的監聽 ---
+    // (因為該按鈕在 HTML 中已經被移除了)
 
     socket.on('export-data', (csvContent) => {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -591,6 +578,7 @@ if (isHostPage) {
         document.body.removeChild(link);
     });
 
+    // 將 applyPreset 移到安全的位置
     window.applyPreset = function(index) {
         if (!currentPresets[index]) return;
         const preset = currentPresets[index];
