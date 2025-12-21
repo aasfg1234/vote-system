@@ -8,6 +8,7 @@ const joinBtn = document.getElementById('join-btn');
 const questionEl = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
 const totalVotesEl = document.getElementById('total-votes');
+const joinedCountEl = document.getElementById('joined-count'); // 新增
 const timerEl = document.getElementById('timer');
 const statusTextEl = document.getElementById('status-text');
 const toastEl = document.getElementById('toast');
@@ -44,7 +45,6 @@ socket.on('joined', (data) => {
     if (data.success) {
         loginScreen.classList.add('hidden');
         voteScreen.classList.remove('hidden');
-        // 注意：這裡移除了 initHostLogic 的呼叫，避免無窮迴圈
     } else {
         showToast(data.error);
     }
@@ -68,6 +68,7 @@ socket.on('timer-tick', (timeLeft) => {
 function renderMeeting(state) {
     currentSettings = state.settings;
     totalVotesEl.textContent = state.totalVotes;
+    if(joinedCountEl) joinedCountEl.textContent = state.joinedCount; // 更新加入人數
     timerEl.textContent = state.timeLeft + 's';
 
     if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
