@@ -155,6 +155,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 .voter-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
 .voter-tag { background: #e2e8f0; color: #475569; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; font-family: 'Noto Sans TC'; }
 
+/* 歷史紀錄樣式 */
 .history-section { margin-top: 40px; border-top: 2px dashed var(--border); padding-top: 20px; }
 .history-card { background: #fff; border: 1px solid var(--border); padding: 15px; margin-bottom: 15px; border-radius: 4px; opacity: 0.8; }
 .history-title { font-family: 'Noto Serif TC'; font-weight: bold; margin-bottom: 10px; color: var(--text-main); }
@@ -199,17 +200,17 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
     transform: translateY(0);
 }
 
-/* --- 版面配置 (修改：改成 1fr 1fr 各一半) --- */
+/* --- 版面配置 (50/50) --- */
 .host-grid { 
     display: grid; 
-    grid-template-columns: 1fr 1fr; /* 這裡改成了 1fr 1fr，就是 50/50 平分 */
+    grid-template-columns: 1fr 1fr; 
     gap: 40px; 
     width: 100%; 
     max-width: 98vw; 
     height: 95vh;
 }
 
-/* 預覽視窗的預設樣式 (桌面版) */
+/* 預覽視窗樣式：確保自動填滿高度 */
 .preview-container {
     padding: 0;
     overflow: hidden;
@@ -224,7 +225,6 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
         height: auto; 
     } 
     
-    /* 手機上強制預覽視窗至少 800px 高 */
     .preview-container {
         height: 800px !important;
         min-height: 80vh;
