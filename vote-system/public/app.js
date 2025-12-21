@@ -6,6 +6,7 @@ const voteScreen = document.getElementById('vote-screen');
 const pinInput = document.getElementById('pin-input');
 const usernameInput = document.getElementById('username-input');
 const joinBtn = document.getElementById('join-btn');
+const leaveBtn = document.getElementById('leave-btn'); // 新增
 const questionEl = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
 const totalVotesEl = document.getElementById('total-votes');
@@ -67,6 +68,15 @@ if (isParticipantPage) {
         });
     }
 
+    // 新增：離開按鈕邏輯
+    if (leaveBtn) {
+        leaveBtn.addEventListener('click', () => {
+            if (confirm('確定要離開會議嗎？')) {
+                logout();
+            }
+        });
+    }
+
     socket.on('joined', (data) => {
         if (data.success) {
             loginScreen.classList.add('hidden');
@@ -74,7 +84,12 @@ if (isParticipantPage) {
         } else {
             showToast(data.error);
             localStorage.removeItem('vote_pin');
-            setTimeout(() => location.reload(), 1000);
+            // 如果是會議已結束被拒，延遲刷新
+            if (data.error === '會議已結束') {
+                setTimeout(() => location.href = 'index.html', 2000);
+            } else {
+                setTimeout(() => location.reload(), 1000);
+            }
         }
     });
 }
@@ -109,6 +124,26 @@ socket.on('timer-tick', (timeLeft) => {
 });
 
 function renderMeeting(state) {
+    // --- 新增：處理會議已結束狀態 ---
+    if (state.status === 'terminated') {
+        if (optionsContainer) {
+            optionsContainer.innerHTML = `
+                <div style="text-align:center; padding:50px 20px;">
+                    <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
+                    <h2 style="color:var(--text-main); margin-bottom:10px;">會議已結束</h2>
+                    <p style="color:var(--text-light);">感謝您的參與</p>
+                    ${isHostPage ? '<p style="font-size:0.8rem; margin-top:20px; color:#aaa;">(主持人可至下方下載完整 CSV)</p>' : ''}
+                    ${isParticipantPage ? '<button onclick="location.href=\'index.html\'" class="btn" style="margin-top:30px;">回首頁</button>' : ''}
+                </div>
+            `;
+        }
+        if (questionEl) questionEl.textContent = '';
+        if (statusTextEl) statusTextEl.textContent = '已結束';
+        // 隱藏離開按鈕（因為已經結束了，會顯示回首頁按鈕）
+        if (leaveBtn) leaveBtn.style.display = 'none';
+        return;
+    }
+
     if (state.voteId !== currentVoteId) {
         myVotes = [];
         currentVoteId = state.voteId;
@@ -131,7 +166,6 @@ function renderMeeting(state) {
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
-                <div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>
             </div>`;
         if(questionEl) questionEl.textContent = '';
         return;
@@ -149,8 +183,6 @@ function renderMeeting(state) {
         }
     }
 
-    // --- 關鍵修改：計算冠軍 ---
-    // 只有在結束時才計算，避免投票時一直閃爍
     let maxVotes = 0;
     if (state.status === 'ended') {
         maxVotes = Math.max(...state.options.map(o => o.count));
@@ -172,14 +204,12 @@ function renderMeeting(state) {
             voterTagsHtml += '</div>';
         }
 
-        // --- 關鍵修改：決定樣式 ---
         let resultClass = '';
         let crownHtml = '';
-        // 只有在結束且有人投票(maxVotes > 0)時才顯示勝負
         if (state.status === 'ended' && maxVotes > 0) {
             if (opt.count === maxVotes) {
                 resultClass = 'winner-card';
-                crownHtml = '<div class="winner-icon">👑</div>'; // 冠軍皇冠
+                crownHtml = '<div class="winner-icon">👑</div>';
             } else {
                 resultClass = 'loser-card';
             }
@@ -191,7 +221,8 @@ function renderMeeting(state) {
              onclick="handleVote(${opt.id})" 
              style="border-left: 5px solid ${opt.color}">
              
-            ${crownHtml} <div class="stamp-mark" style="display:none;">已選</div>
+            ${crownHtml}
+            <div class="stamp-mark" style="display:none;">已選</div>
             
             <div class="progress-bg" style="width: ${displayWidth}%; background-color: ${opt.color}; opacity: ${bgOpacity};"></div>
             <div class="option-content">
@@ -289,12 +320,11 @@ function launchConfetti() {
     }
 }
 
+// 登出並回首頁 (Portal)
 window.logout = function() {
-    if(confirm('確定要登出並切換使用者嗎？')) {
-        localStorage.removeItem('vote_pin');
-        localStorage.removeItem('vote_username');
-        location.reload();
-    }
+    localStorage.removeItem('vote_pin');
+    localStorage.removeItem('vote_username');
+    location.href = 'index.html'; // 跳轉回入口頁
 }
 
 // 主持人頁面邏輯
@@ -303,6 +333,8 @@ if (isHostPage) {
     const pwdInput = document.getElementById('host-password-input');
     const loginBtn = document.getElementById('host-login-submit');
     const errorMsg = document.getElementById('login-error-msg');
+    // 新增：結束會議按鈕
+    const terminateBtn = document.getElementById('terminate-btn');
 
     function attemptLogin() {
         const pwd = pwdInput.value;
@@ -355,6 +387,16 @@ if (isHostPage) {
         socket.emit('stop-vote');
         showToast('已強制結束');
     });
+
+    // 新增：結束會議
+    if (terminateBtn) {
+        terminateBtn.addEventListener('click', () => {
+            if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出)')) {
+                socket.emit('terminate-meeting');
+                showToast('會議已終止');
+            }
+        });
+    }
 
     document.getElementById('clear-form-btn').addEventListener('click', () => {
         document.getElementById('h-question').value = '';
