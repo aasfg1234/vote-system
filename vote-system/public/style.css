@@ -97,6 +97,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 }
 .option-card:hover, .option-card.selected { border-color: var(--primary); background: #fff; }
 
+/* 冠軍與落選者 */
 .option-card.winner-card {
     border: 2px solid var(--gold) !important;
     background: #fffdf0 !important;
