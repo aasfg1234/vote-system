@@ -155,7 +155,6 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 .voter-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
 .voter-tag { background: #e2e8f0; color: #475569; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; font-family: 'Noto Sans TC'; }
 
-/* 歷史紀錄樣式 */
 .history-section { margin-top: 40px; border-top: 2px dashed var(--border); padding-top: 20px; }
 .history-card { background: #fff; border: 1px solid var(--border); padding: 15px; margin-bottom: 15px; border-radius: 4px; opacity: 0.8; }
 .history-title { font-family: 'Noto Serif TC'; font-weight: bold; margin-bottom: 10px; color: var(--text-main); }
@@ -200,17 +199,16 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
     transform: translateY(0);
 }
 
-/* --- 版面配置 (50/50) --- */
+/* --- 版面配置 (修改：左邊自動，右邊 400px) --- */
 .host-grid { 
     display: grid; 
-    grid-template-columns: 1fr 1fr; 
+    grid-template-columns: 1fr 400px; /* 這裡設定：左邊吃滿，右邊固定 400px */
     gap: 40px; 
     width: 100%; 
     max-width: 98vw; 
     height: 95vh;
 }
 
-/* 預覽視窗樣式：確保自動填滿高度 */
 .preview-container {
     padding: 0;
     overflow: hidden;
