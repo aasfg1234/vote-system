@@ -7,34 +7,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// --- 設定 (改成 let 以便修改) ---
-let hostPassword = process.env.HOST_PASSWORD || '8888';
-
+// --- 設定 ---
+const HOST_PASSWORD = process.env.HOST_PASSWORD || '8888';
 app.use(express.static(path.join(__dirname, 'public')));
-
-// --- 預設樣板資料 ---
-let presets = [
-    {
-        name: "⭕ 是非題",
-        question: "您是否同意此提案？",
-        options: ["⭕ 同意", "❌ 不同意"]
-    },
-    {
-        name: "📊 評分題",
-        question: "請對本次活動進行評分",
-        options: ["⭐️⭐️⭐️⭐️⭐️ 非常滿意", "⭐️⭐️⭐️⭐️ 滿意", "⭐️⭐️⭐️ 普通", "⭐️⭐️ 尚可", "⭐️ 待加強"]
-    },
-    {
-        name: "🍱 午餐題",
-        question: "今天午餐想吃什麼類別？",
-        options: ["🍱 便當/自助餐", "🍜 麵食/水餃", "🍔 速食", "🥗 輕食/沙拉"]
-    }
-];
 
 // --- 系統狀態 ---
 let meetingState = {
     pin: Math.floor(1000 + Math.random() * 9000).toString(),
-    status: 'waiting', 
+    status: 'waiting', // waiting, voting, ended, terminated(新狀態)
     question: '',
     options: [],
     settings: { allowMulti: false, blindMode: false, duration: 0 },
@@ -78,6 +58,7 @@ function broadcastState() {
     let totalVotes = 0;
     meetingState.options.forEach(opt => opt.count = 0);
 
+    // 建立主持人專用的名單視圖
     const hostVoterMap = {}; 
 
     voterRecords.forEach((votes, username) => {
@@ -123,12 +104,12 @@ function broadcastState() {
         voteId: meetingState.voteId
     };
 
+    // 分流廣播
     io.to('host-room').emit('state-update', { 
         ...basePayload, 
         options: fullOptions,
         hostVoterMap: hostVoterMap, 
-        history: meetingHistory,
-        presets: presets // 將最新的樣板列表傳給主持人
+        history: meetingHistory     
     });
 
     if (meetingState.settings.blindMode && meetingState.status === 'voting') {
@@ -150,6 +131,7 @@ io.on('connection', (socket) => {
         const pin = typeof data === 'object' ? data.pin : data;
         const username = typeof data === 'object' ? data.username : null;
 
+        // 如果會議已結束，拒絕加入 (除非是主持人)
         if (meetingState.status === 'terminated' && username !== 'HOST') {
             socket.emit('joined', { success: false, error: '會議已結束' });
             return;
@@ -168,9 +150,8 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 主持人登入 (驗證變數密碼) ---
     socket.on('host-login', (inputPassword) => {
-        if (inputPassword === hostPassword) {
+        if (inputPassword === HOST_PASSWORD) {
             socket.join('host-room'); 
             socket.emit('host-login-success', { pin: meetingState.pin });
             socket.join('meeting-room');
@@ -178,19 +159,6 @@ io.on('connection', (socket) => {
         } else {
             socket.emit('host-login-fail');
         }
-    });
-
-    // --- 修改密碼 ---
-    socket.on('change-password', (newPwd) => {
-        hostPassword = newPwd;
-        // 通知主持人密碼已更新
-        socket.emit('password-updated');
-    });
-
-    // --- 新增樣板 ---
-    socket.on('add-preset', (newPreset) => {
-        presets.push(newPreset);
-        broadcastState(); // 廣播讓前端更新按鈕列表
     });
 
     socket.on('start-vote', (data) => {
@@ -236,12 +204,15 @@ io.on('connection', (socket) => {
         broadcastState();
     }
 
+    // --- 新增：結束會議 ---
     socket.on('terminate-meeting', () => {
+        // 先存檔當前題目(如果有的話)
         if (meetingState.question && meetingState.status !== 'waiting') {
             archiveCurrentVote();
         }
+        
         if (meetingState.timer) clearInterval(meetingState.timer);
-        meetingState.status = 'terminated';
+        meetingState.status = 'terminated'; // 設定為終止狀態
         meetingState.question = '';
         meetingState.endTime = null;
         broadcastState();
@@ -259,7 +230,8 @@ io.on('connection', (socket) => {
 
     socket.on('request-export', () => {
         let csvContent = "\uFEFF題目,選項,票數,投票者名單\n"; 
-        
+
+        // 歷史題目
         meetingHistory.forEach(record => {
             record.options.forEach(opt => {
                 const voters = [];
@@ -274,6 +246,7 @@ io.on('connection', (socket) => {
             csvContent += `,,,\n`; 
         });
 
+        // 當前題目
         if (meetingState.question && meetingState.status !== 'terminated') {
             const currentVoterMap = {};
             voterRecords.forEach((votes, username) => {
