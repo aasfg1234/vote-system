@@ -149,7 +149,6 @@ socket.on('timer-tick', (timeLeft) => {
 function renderMeeting(state) {
     if (state.status === 'terminated') {
         if (optionsContainer) {
-            // --- 修改：會議結束畫面 ---
             optionsContainer.innerHTML = `
                 <div style="text-align:center; padding:50px 20px;">
                     <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
@@ -377,6 +376,7 @@ if (isHostPage) {
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const savePasswordBtn = document.getElementById('save-password-btn');
     const addPresetBtn = document.getElementById('add-preset-btn');
+    const saveHostNameBtn = document.getElementById('save-host-name-btn'); // 新增
     
     if (openSettingsBtn) {
         openSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
@@ -390,6 +390,18 @@ if (isHostPage) {
                 socket.emit('change-password', newPwd);
             } else {
                 showToast('密碼不能為空');
+            }
+        });
+    }
+
+    // 新增：儲存主持人暱稱
+    if (saveHostNameBtn) {
+        saveHostNameBtn.addEventListener('click', () => {
+            const newName = document.getElementById('new-host-name').value;
+            if (newName.trim()) {
+                socket.emit('change-host-name', newName.trim());
+            } else {
+                showToast('暱稱不能為空');
             }
         });
     }
@@ -418,6 +430,11 @@ if (isHostPage) {
         document.getElementById('new-host-password').value = '';
     });
 
+    socket.on('host-name-updated', (newName) => {
+        showToast('主持人暱稱已更新為: ' + newName);
+        currentUsername = newName;
+    });
+
     function attemptLogin() {
         const pwd = pwdInput.value;
         if (!pwd) return;
@@ -432,8 +449,12 @@ if (isHostPage) {
         setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
         currentPin = data.pin; 
-        currentUsername = 'HOST';
-        socket.emit('join', { pin: data.pin, username: 'HOST' }); 
+        
+        // 更新本地儲存的名稱為伺服器上的主持人暱稱
+        currentUsername = data.hostName || 'HOST';
+        document.getElementById('new-host-name').value = currentUsername;
+
+        socket.emit('join', { pin: data.pin, username: currentUsername }); 
         showToast('🔓 控制台已解鎖');
     });
 
@@ -470,13 +491,10 @@ if (isHostPage) {
         showToast('已強制結束');
     });
 
-    // --- 修改：結束會議按鈕邏輯 ---
     if (terminateBtn) {
         terminateBtn.addEventListener('click', () => {
             if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出，並自動下載報表)')) {
-                // 先請求下載 CSV
                 socket.emit('request-export');
-                // 再發送結束指令
                 socket.emit('terminate-meeting');
                 showToast('會議已終止，正在下載報表...');
             }
