@@ -13,6 +13,8 @@ const joinedCountEl = document.getElementById('joined-count');
 const timerEl = document.getElementById('timer');
 const statusTextEl = document.getElementById('status-text');
 const toastEl = document.getElementById('toast');
+// 新增：歷史紀錄容器
+const historyContainer = document.getElementById('history-container');
 
 let myVotes = [];
 let currentSettings = {};
@@ -39,84 +41,60 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// ==========================================
-// 🛡️ 核心修改：強制自動登入邏輯
-// ==========================================
+// 強制自動登入邏輯
 if (isParticipantPage) {
-    // 1. 檢查是否有舊的登入紀錄
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
 
     if (storedPin && storedName) {
-        // A. 有紀錄 -> 強制鎖定，不顯示登入畫面
-        console.log('Detected existing session, auto-login...');
         currentPin = storedPin;
         currentUsername = storedName;
-        
-        // 隱藏登入框，顯示載入中
         loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2><p style="text-align:center; color:var(--text-light);">${currentUsername}</p>`;
-        
-        // 立即發送加入請求
         socket.emit('join', { pin: currentPin, username: currentUsername });
     }
 
-    // 2. 處理手動登入按鈕 (只有第一次沒紀錄時會用到)
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
             const pin = pinInput.value;
             const username = usernameInput.value.trim();
-
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
             
-            // 儲存身分到 localStorage (鎖定瀏覽器)
             localStorage.setItem('vote_pin', pin);
             localStorage.setItem('vote_username', username);
-            
             currentPin = pin;
             currentUsername = username;
-
             socket.emit('join', { pin: pin, username: username });
         });
     }
 
-    // 3. 處理加入結果
     socket.on('joined', (data) => {
         if (data.success) {
-            // 登入成功：切換畫面
-            // 如果原本是顯示 "正在恢復連線" 的 loginScreen，現在隱藏它
             loginScreen.classList.add('hidden');
             voteScreen.classList.remove('hidden');
         } else {
-            // 登入失敗 (可能是 PIN 碼換了，或是伺服器重啟 PIN 變了)
             showToast(data.error);
-            
-            // 清除無效的紀錄，讓使用者可以重新輸入
             localStorage.removeItem('vote_pin');
-            // localStorage.removeItem('vote_username'); // 名字可以留著方便他打
-            
-            // 重新載入頁面以還原登入框 (最簡單暴力的重置法)
             setTimeout(() => location.reload(), 1000);
         }
     });
 }
 
-// 斷線重連 (網路不穩時用)
 socket.on('connect', () => {
-    // 如果變數還在，嘗試重連
     if (currentPin && currentUsername) {
         socket.emit('join', { pin: currentPin, username: currentUsername });
-        console.log('Network recovered, rejoining...');
     }
 });
 
-// ==========================================
-// 以下邏輯與之前相同
-// ==========================================
-
+// 狀態渲染
 socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
     renderMeeting(state);
+    
+    // 主持人額外渲染歷史紀錄
+    if (isHostPage && state.history) {
+        renderHistory(state.history);
+    }
 });
 
 socket.on('vote-confirmed', (votes) => {
@@ -180,6 +158,16 @@ function renderMeeting(state) {
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
+        // --- 記名透視功能 (Host Only) ---
+        let voterTagsHtml = '';
+        if (isHostPage && state.hostVoterMap && state.hostVoterMap[opt.id]) {
+            voterTagsHtml = '<div class="voter-tags">';
+            state.hostVoterMap[opt.id].forEach(name => {
+                voterTagsHtml += `<span class="voter-tag">${name}</span>`;
+            });
+            voterTagsHtml += '</div>';
+        }
+
         html += `
         <div class="option-card" 
              id="opt-${opt.id}"
@@ -193,16 +181,51 @@ function renderMeeting(state) {
                 <span class="option-text">${opt.text}</span>
                 <span class="vote-stats" style="${isBlind ? 'color:#cbd5e1' : ''}">${displayText}</span>
             </div>
-        </div>`;
+            ${voterTagsHtml} </div>`;
     });
     
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
         updateSelectionUI();
-        if (state.status === 'ended') {
-            Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
+        if (state.status === 'ended' || isHostPage) { // 主持人不需要點擊投票
+             // 注意：主持人若要投票，這裡不能禁點擊，但為了避免誤觸，我們還是保持原樣
+             if (state.status === 'ended') {
+                Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
+             }
         }
     }
+}
+
+// --- 新增：渲染歷史紀錄 ---
+function renderHistory(history) {
+    if (!historyContainer) return;
+    if (history.length === 0) {
+        historyContainer.innerHTML = '<p style="text-align:center; color:#ccc; font-size:0.9rem;">尚未有歸檔紀錄</p>';
+        return;
+    }
+
+    let html = '';
+    // 倒序顯示 (最新的在上面)
+    [...history].reverse().forEach(record => {
+        const timeStr = new Date(record.timestamp).toLocaleTimeString();
+        let optionsSummary = '';
+        record.options.forEach(opt => {
+             optionsSummary += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:4px; color:#64748b;">
+                <span>${opt.text}</span>
+                <span>${opt.count} 票</span>
+             </div>`;
+        });
+
+        html += `
+        <div class="history-card">
+            <div class="history-title">${record.question}</div>
+            <div class="history-stats">🕒 ${timeStr} | 🗳️ 總票數: ${record.totalVotes}</div>
+            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">
+                ${optionsSummary}
+            </div>
+        </div>`;
+    });
+    historyContainer.innerHTML = html;
 }
 
 function updateSelectionUI() {
@@ -251,8 +274,6 @@ function launchConfetti() {
     }
 }
 
-// 隱藏功能：切換使用者 (Logout)
-// 必須設為全域函式才能在 HTML onclick 中呼叫
 window.logout = function() {
     if(confirm('確定要登出並切換使用者嗎？')) {
         localStorage.removeItem('vote_pin');
@@ -341,7 +362,7 @@ if (isHostPage) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `投票結果_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.csv`;
+        link.download = `會議結果匯總_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.csv`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -366,3 +387,4 @@ if (isHostPage) {
         showToast('已套用樣板');
     };
 }
+
