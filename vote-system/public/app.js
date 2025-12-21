@@ -6,7 +6,7 @@ const voteScreen = document.getElementById('vote-screen');
 const pinInput = document.getElementById('pin-input');
 const usernameInput = document.getElementById('username-input');
 const joinBtn = document.getElementById('join-btn');
-const leaveBtn = document.getElementById('leave-btn'); // 新增
+const leaveBtn = document.getElementById('leave-btn');
 const questionEl = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
 const totalVotesEl = document.getElementById('total-votes');
@@ -15,6 +15,7 @@ const timerEl = document.getElementById('timer');
 const statusTextEl = document.getElementById('status-text');
 const toastEl = document.getElementById('toast');
 const historyContainer = document.getElementById('history-container');
+const presetButtonsContainer = document.getElementById('preset-buttons'); // 新增
 
 let myVotes = [];
 let currentSettings = {};
@@ -22,6 +23,8 @@ let lastStatus = 'waiting';
 let currentVoteId = 0; 
 let currentPin = '';
 let currentUsername = '';
+// 儲存目前的樣板列表，方便呼叫
+let currentPresets = []; 
 
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
@@ -68,7 +71,6 @@ if (isParticipantPage) {
         });
     }
 
-    // 新增：離開按鈕邏輯
     if (leaveBtn) {
         leaveBtn.addEventListener('click', () => {
             if (confirm('確定要離開會議嗎？')) {
@@ -84,7 +86,6 @@ if (isParticipantPage) {
         } else {
             showToast(data.error);
             localStorage.removeItem('vote_pin');
-            // 如果是會議已結束被拒，延遲刷新
             if (data.error === '會議已結束') {
                 setTimeout(() => location.href = 'index.html', 2000);
             } else {
@@ -105,8 +106,10 @@ socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
     renderMeeting(state);
     
-    if (isHostPage && state.history) {
-        renderHistory(state.history);
+    // 主持人：更新歷史紀錄 與 樣板按鈕
+    if (isHostPage) {
+        if (state.history) renderHistory(state.history);
+        if (state.presets) renderPresets(state.presets);
     }
 });
 
@@ -124,7 +127,6 @@ socket.on('timer-tick', (timeLeft) => {
 });
 
 function renderMeeting(state) {
-    // --- 新增：處理會議已結束狀態 ---
     if (state.status === 'terminated') {
         if (optionsContainer) {
             optionsContainer.innerHTML = `
@@ -139,7 +141,6 @@ function renderMeeting(state) {
         }
         if (questionEl) questionEl.textContent = '';
         if (statusTextEl) statusTextEl.textContent = '已結束';
-        // 隱藏離開按鈕（因為已經結束了，會顯示回首頁按鈕）
         if (leaveBtn) leaveBtn.style.display = 'none';
         return;
     }
@@ -274,6 +275,18 @@ function renderHistory(history) {
     historyContainer.innerHTML = html;
 }
 
+// 新增：渲染樣板按鈕
+function renderPresets(presets) {
+    if (!presetButtonsContainer) return;
+    currentPresets = presets; // 更新本地快取
+    
+    let html = '';
+    presets.forEach((preset, index) => {
+        html += `<button class="preset-btn" onclick="applyPreset(${index})">${preset.name}</button>`;
+    });
+    presetButtonsContainer.innerHTML = html;
+}
+
 function updateSelectionUI() {
     if (!optionsContainer) return;
     const cards = optionsContainer.querySelectorAll('.option-card');
@@ -320,11 +333,10 @@ function launchConfetti() {
     }
 }
 
-// 登出並回首頁 (Portal)
 window.logout = function() {
     localStorage.removeItem('vote_pin');
     localStorage.removeItem('vote_username');
-    location.href = 'index.html'; // 跳轉回入口頁
+    location.href = 'index.html';
 }
 
 // 主持人頁面邏輯
@@ -333,8 +345,58 @@ if (isHostPage) {
     const pwdInput = document.getElementById('host-password-input');
     const loginBtn = document.getElementById('host-login-submit');
     const errorMsg = document.getElementById('login-error-msg');
-    // 新增：結束會議按鈕
     const terminateBtn = document.getElementById('terminate-btn');
+    
+    // 設定視窗元素
+    const settingsModal = document.getElementById('settings-modal');
+    const openSettingsBtn = document.getElementById('open-settings-btn');
+    const closeSettingsBtn = document.getElementById('close-settings-btn');
+    const savePasswordBtn = document.getElementById('save-password-btn');
+    const addPresetBtn = document.getElementById('add-preset-btn');
+    
+    // 設定視窗開關
+    if (openSettingsBtn) {
+        openSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+        closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
+    }
+
+    // 修改密碼
+    if (savePasswordBtn) {
+        savePasswordBtn.addEventListener('click', () => {
+            const newPwd = document.getElementById('new-host-password').value;
+            if (newPwd.trim()) {
+                socket.emit('change-password', newPwd);
+            } else {
+                showToast('密碼不能為空');
+            }
+        });
+    }
+
+    // 新增樣板
+    if (addPresetBtn) {
+        addPresetBtn.addEventListener('click', () => {
+            const name = document.getElementById('new-preset-name').value;
+            const question = document.getElementById('new-preset-question').value;
+            const optionsStr = document.getElementById('new-preset-options').value;
+            
+            if (name && question && optionsStr) {
+                const options = optionsStr.split(',').map(s => s.trim()).filter(s => s);
+                socket.emit('add-preset', { name, question, options });
+                showToast('樣板已新增');
+                // 清空輸入框
+                document.getElementById('new-preset-name').value = '';
+                document.getElementById('new-preset-question').value = '';
+                document.getElementById('new-preset-options').value = '';
+            } else {
+                showToast('請填寫完整資訊');
+            }
+        });
+    }
+    
+    socket.on('password-updated', () => {
+        showToast('密碼修改成功');
+        document.getElementById('new-host-password').value = '';
+    });
 
     function attemptLogin() {
         const pwd = pwdInput.value;
@@ -388,7 +450,6 @@ if (isHostPage) {
         showToast('已強制結束');
     });
 
-    // 新增：結束會議
     if (terminateBtn) {
         terminateBtn.addEventListener('click', () => {
             if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出)')) {
@@ -425,22 +486,22 @@ if (isHostPage) {
         document.body.removeChild(link);
     });
 
-    window.applyPreset = function(type) {
+    // 改寫：使用索引套用樣板
+    window.applyPreset = function(index) {
+        if (!currentPresets[index]) return;
+        const preset = currentPresets[index];
+        
         const qInput = document.getElementById('h-question');
         const optInputs = document.querySelectorAll('.opt-text');
-        qInput.value = ''; optInputs.forEach(i => i.value = '');
-        if (type === 'yesno') {
-            qInput.value = '您是否同意此提案？';
-            optInputs[0].value = '⭕ 同意'; optInputs[1].value = '❌ 不同意';
-        } else if (type === 'scale') {
-            qInput.value = '請對本次活動進行評分';
-            optInputs[0].value = '⭐️⭐️⭐️⭐️⭐️ 非常滿意'; optInputs[1].value = '⭐️⭐️⭐️⭐️ 滿意';
-            optInputs[2].value = '⭐️⭐️⭐️ 普通'; optInputs[3].value = '⭐️⭐️ 尚可'; optInputs[4].value = '⭐️ 待加強';
-        } else if (type === 'lunch') {
-            qInput.value = '今天午餐想吃什麼類別？';
-            optInputs[0].value = '🍱 便當/自助餐'; optInputs[1].value = '🍜 麵食/水餃';
-            optInputs[2].value = '🍔 速食'; optInputs[3].value = '🥗 輕食/沙拉';
-        }
-        showToast('已套用樣板');
+        
+        qInput.value = preset.question;
+        // 清空選項
+        optInputs.forEach(i => i.value = '');
+        // 填入選項
+        preset.options.forEach((optText, i) => {
+            if (optInputs[i]) optInputs[i].value = optText;
+        });
+        
+        showToast('已套用：' + preset.name);
     };
 }
