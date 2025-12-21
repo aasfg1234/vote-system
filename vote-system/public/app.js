@@ -4,7 +4,7 @@ const socket = io();
 const loginScreen = document.getElementById('login-screen');
 const voteScreen = document.getElementById('vote-screen');
 const pinInput = document.getElementById('pin-input');
-const usernameInput = document.getElementById('username-input'); // 新增
+const usernameInput = document.getElementById('username-input');
 const joinBtn = document.getElementById('join-btn');
 const questionEl = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
@@ -19,7 +19,7 @@ let currentSettings = {};
 let lastStatus = 'waiting';
 let currentVoteId = 0; 
 let currentPin = '';
-let currentUsername = localStorage.getItem('vote_username') || ''; // 從本地讀取名字
+let currentUsername = '';
 
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
@@ -28,19 +28,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// 初始化：如果之前輸入過名字，自動填入
-if (usernameInput && currentUsername) {
-    usernameInput.value = currentUsername;
-}
-
-// 斷線重連邏輯
-socket.on('connect', () => {
-    if (currentPin && currentUsername) {
-        socket.emit('join', { pin: currentPin, username: currentUsername });
-        console.log('Reconnecting...');
-    }
-});
-
+// 金句庫
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
     "「選擇本身就是一種放棄，但也是一種獲得。」",
@@ -51,8 +39,28 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// --- 1. 與會者邏輯 ---
+// ==========================================
+// 🛡️ 核心修改：強制自動登入邏輯
+// ==========================================
 if (isParticipantPage) {
+    // 1. 檢查是否有舊的登入紀錄
+    const storedPin = localStorage.getItem('vote_pin');
+    const storedName = localStorage.getItem('vote_username');
+
+    if (storedPin && storedName) {
+        // A. 有紀錄 -> 強制鎖定，不顯示登入畫面
+        console.log('Detected existing session, auto-login...');
+        currentPin = storedPin;
+        currentUsername = storedName;
+        
+        // 隱藏登入框，顯示載入中
+        loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2><p style="text-align:center; color:var(--text-light);">${currentUsername}</p>`;
+        
+        // 立即發送加入請求
+        socket.emit('join', { pin: currentPin, username: currentUsername });
+    }
+
+    // 2. 處理手動登入按鈕 (只有第一次沒紀錄時會用到)
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
             const pin = pinInput.value;
@@ -61,27 +69,51 @@ if (isParticipantPage) {
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
             
-            // 儲存資訊
+            // 儲存身分到 localStorage (鎖定瀏覽器)
+            localStorage.setItem('vote_pin', pin);
+            localStorage.setItem('vote_username', username);
+            
             currentPin = pin;
             currentUsername = username;
-            localStorage.setItem('vote_username', username); // 記住名字
 
             socket.emit('join', { pin: pin, username: username });
         });
     }
 
+    // 3. 處理加入結果
     socket.on('joined', (data) => {
         if (data.success) {
+            // 登入成功：切換畫面
+            // 如果原本是顯示 "正在恢復連線" 的 loginScreen，現在隱藏它
             loginScreen.classList.add('hidden');
             voteScreen.classList.remove('hidden');
         } else {
+            // 登入失敗 (可能是 PIN 碼換了，或是伺服器重啟 PIN 變了)
             showToast(data.error);
-            currentPin = ''; 
+            
+            // 清除無效的紀錄，讓使用者可以重新輸入
+            localStorage.removeItem('vote_pin');
+            // localStorage.removeItem('vote_username'); // 名字可以留著方便他打
+            
+            // 重新載入頁面以還原登入框 (最簡單暴力的重置法)
+            setTimeout(() => location.reload(), 1000);
         }
     });
 }
 
-// --- 2. 狀態渲染 ---
+// 斷線重連 (網路不穩時用)
+socket.on('connect', () => {
+    // 如果變數還在，嘗試重連
+    if (currentPin && currentUsername) {
+        socket.emit('join', { pin: currentPin, username: currentUsername });
+        console.log('Network recovered, rejoining...');
+    }
+});
+
+// ==========================================
+// 以下邏輯與之前相同
+// ==========================================
+
 socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
     renderMeeting(state);
@@ -123,6 +155,7 @@ function renderMeeting(state) {
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
+                <div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>
             </div>`;
         if(questionEl) questionEl.textContent = '';
         return;
@@ -202,7 +235,6 @@ function handleVote(optionId) {
     }
     
     updateSelectionUI();
-    // 提交時傳送 username
     socket.emit('submit-vote', { votes: myVotes, username: currentUsername });
 }
 
@@ -216,6 +248,16 @@ function showToast(msg) {
 function launchConfetti() {
     if(typeof confetti === 'function') {
         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+    }
+}
+
+// 隱藏功能：切換使用者 (Logout)
+// 必須設為全域函式才能在 HTML onclick 中呼叫
+window.logout = function() {
+    if(confirm('確定要登出並切換使用者嗎？')) {
+        localStorage.removeItem('vote_pin');
+        localStorage.removeItem('vote_username');
+        location.reload();
     }
 }
 
@@ -240,7 +282,7 @@ if (isHostPage) {
         setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
         currentPin = data.pin; 
-        currentUsername = 'HOST'; // 主持人也給個名字
+        currentUsername = 'HOST';
         socket.emit('join', { pin: data.pin, username: 'HOST' }); 
         showToast('🔓 控制台已解鎖');
     });
@@ -253,7 +295,6 @@ if (isHostPage) {
         setTimeout(() => pwdInput.style.animation = '', 500);
     });
 
-    // 主持人控制功能 (保持不變)
     document.getElementById('start-vote-btn').addEventListener('click', () => {
         const question = document.getElementById('h-question').value;
         if(!question) return showToast('請輸入題目');
