@@ -14,7 +14,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // --- 系統狀態 ---
 let meetingState = {
     pin: Math.floor(1000 + Math.random() * 9000).toString(),
-    status: 'waiting',
+    status: 'waiting', // waiting, voting, ended, terminated(新狀態)
     question: '',
     options: [],
     settings: { allowMulti: false, blindMode: false, duration: 0 },
@@ -131,6 +131,12 @@ io.on('connection', (socket) => {
         const pin = typeof data === 'object' ? data.pin : data;
         const username = typeof data === 'object' ? data.username : null;
 
+        // 如果會議已結束，拒絕加入 (除非是主持人)
+        if (meetingState.status === 'terminated' && username !== 'HOST') {
+            socket.emit('joined', { success: false, error: '會議已結束' });
+            return;
+        }
+
         if (pin === meetingState.pin) {
             socket.join('meeting-room');
             socket.emit('joined', { success: true });
@@ -156,7 +162,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('start-vote', (data) => {
-        if (meetingState.question && meetingState.status !== 'waiting') {
+        if (meetingState.question && meetingState.status !== 'waiting' && meetingState.status !== 'terminated') {
             archiveCurrentVote();
         }
 
@@ -198,6 +204,20 @@ io.on('connection', (socket) => {
         broadcastState();
     }
 
+    // --- 新增：結束會議 ---
+    socket.on('terminate-meeting', () => {
+        // 先存檔當前題目(如果有的話)
+        if (meetingState.question && meetingState.status !== 'waiting') {
+            archiveCurrentVote();
+        }
+        
+        if (meetingState.timer) clearInterval(meetingState.timer);
+        meetingState.status = 'terminated'; // 設定為終止狀態
+        meetingState.question = '';
+        meetingState.endTime = null;
+        broadcastState();
+    });
+
     socket.on('submit-vote', (data) => {
         if (meetingState.status !== 'voting') return;
         const votes = data.votes;
@@ -227,7 +247,7 @@ io.on('connection', (socket) => {
         });
 
         // 當前題目
-        if (meetingState.question) {
+        if (meetingState.question && meetingState.status !== 'terminated') {
             const currentVoterMap = {};
             voterRecords.forEach((votes, username) => {
                 votes.forEach(optId => {
@@ -249,8 +269,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => broadcastState());
-
-}); // <--- 確保這行存在！
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
