@@ -16,8 +16,8 @@ const statusTextEl = document.getElementById('status-text');
 const toastEl = document.getElementById('toast');
 const historyContainer = document.getElementById('history-container');
 const presetButtonsContainer = document.getElementById('preset-buttons');
-const fontUpBtn = document.getElementById('font-up'); // 新增
-const fontDownBtn = document.getElementById('font-down'); // 新增
+const fontUpBtn = document.getElementById('font-up'); 
+const fontDownBtn = document.getElementById('font-down'); 
 
 let myVotes = [];
 let currentSettings = {};
@@ -27,9 +27,8 @@ let currentPin = '';
 let currentUsername = '';
 let currentPresets = []; 
 
-// --- 字體縮放邏輯 (新增) ---
+// --- 字體縮放邏輯 ---
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
-// 設定初始字體大小 (基準 16px)
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
 
 if(fontUpBtn && fontDownBtn) {
@@ -39,7 +38,6 @@ if(fontUpBtn && fontDownBtn) {
 
 function adjustFont(delta) {
     currentFontSize += delta;
-    // 限制範圍 (0.6x ~ 2.2x)
     if (currentFontSize < 0.6) currentFontSize = 0.6;
     if (currentFontSize > 2.2) currentFontSize = 2.2;
     
@@ -47,7 +45,6 @@ function adjustFont(delta) {
     localStorage.setItem('vote_font_scale', currentFontSize);
     showToast(`字體大小: ${Math.round(currentFontSize * 100)}%`);
 }
-// ----------------------------
 
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
@@ -152,12 +149,18 @@ socket.on('timer-tick', (timeLeft) => {
 function renderMeeting(state) {
     if (state.status === 'terminated') {
         if (optionsContainer) {
+            // --- 修改：會議結束畫面 ---
             optionsContainer.innerHTML = `
                 <div style="text-align:center; padding:50px 20px;">
                     <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
                     <h2 style="color:var(--text-main); margin-bottom:10px;">會議已結束</h2>
                     <p style="color:var(--text-light);">感謝您的參與</p>
-                    ${isHostPage ? '<p style="font-size:0.8rem; margin-top:20px; color:#aaa;">(主持人可至下方下載完整 CSV)</p>' : ''}
+                    
+                    ${isHostPage ? `
+                        <p style="font-size:0.9rem; margin-top:20px; color:var(--success);">✓ 報表已自動下載</p>
+                        <button onclick="location.href='index.html'" class="btn" style="margin-top:20px; background:var(--text-main);">🏠 回首頁 (開啟新會議)</button>
+                    ` : ''}
+                    
                     ${isParticipantPage ? '<button onclick="location.href=\'index.html\'" class="btn" style="margin-top:30px;">回首頁</button>' : ''}
                 </div>
             `;
@@ -298,7 +301,6 @@ function renderHistory(history) {
     historyContainer.innerHTML = html;
 }
 
-// 渲染樣板按鈕
 function renderPresets(presets) {
     if (!presetButtonsContainer) return;
     currentPresets = presets; 
@@ -468,11 +470,15 @@ if (isHostPage) {
         showToast('已強制結束');
     });
 
+    // --- 修改：結束會議按鈕邏輯 ---
     if (terminateBtn) {
         terminateBtn.addEventListener('click', () => {
-            if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出)')) {
+            if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出，並自動下載報表)')) {
+                // 先請求下載 CSV
+                socket.emit('request-export');
+                // 再發送結束指令
                 socket.emit('terminate-meeting');
-                showToast('會議已終止');
+                showToast('會議已終止，正在下載報表...');
             }
         });
     }
