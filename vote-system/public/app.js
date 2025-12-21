@@ -13,7 +13,6 @@ const joinedCountEl = document.getElementById('joined-count');
 const timerEl = document.getElementById('timer');
 const statusTextEl = document.getElementById('status-text');
 const toastEl = document.getElementById('toast');
-// 新增：歷史紀錄容器
 const historyContainer = document.getElementById('history-container');
 
 let myVotes = [];
@@ -91,7 +90,6 @@ socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
     renderMeeting(state);
     
-    // 主持人額外渲染歷史紀錄
     if (isHostPage && state.history) {
         renderHistory(state.history);
     }
@@ -151,6 +149,13 @@ function renderMeeting(state) {
         }
     }
 
+    // --- 關鍵修改：計算冠軍 ---
+    // 只有在結束時才計算，避免投票時一直閃爍
+    let maxVotes = 0;
+    if (state.status === 'ended') {
+        maxVotes = Math.max(...state.options.map(o => o.count));
+    }
+
     let html = '';
     state.options.forEach(opt => {
         const isBlind = opt.percent === -1;
@@ -158,7 +163,6 @@ function renderMeeting(state) {
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
-        // --- 記名透視功能 (Host Only) ---
         let voterTagsHtml = '';
         if (isHostPage && state.hostVoterMap && state.hostVoterMap[opt.id]) {
             voterTagsHtml = '<div class="voter-tags">';
@@ -168,27 +172,40 @@ function renderMeeting(state) {
             voterTagsHtml += '</div>';
         }
 
+        // --- 關鍵修改：決定樣式 ---
+        let resultClass = '';
+        let crownHtml = '';
+        // 只有在結束且有人投票(maxVotes > 0)時才顯示勝負
+        if (state.status === 'ended' && maxVotes > 0) {
+            if (opt.count === maxVotes) {
+                resultClass = 'winner-card';
+                crownHtml = '<div class="winner-icon">👑</div>'; // 冠軍皇冠
+            } else {
+                resultClass = 'loser-card';
+            }
+        }
+
         html += `
-        <div class="option-card" 
+        <div class="option-card ${resultClass}" 
              id="opt-${opt.id}"
              onclick="handleVote(${opt.id})" 
              style="border-left: 5px solid ${opt.color}">
              
-            <div class="stamp-mark" style="display:none;">已選</div>
+            ${crownHtml} <div class="stamp-mark" style="display:none;">已選</div>
             
             <div class="progress-bg" style="width: ${displayWidth}%; background-color: ${opt.color}; opacity: ${bgOpacity};"></div>
             <div class="option-content">
                 <span class="option-text">${opt.text}</span>
                 <span class="vote-stats" style="${isBlind ? 'color:#cbd5e1' : ''}">${displayText}</span>
             </div>
-            ${voterTagsHtml} </div>`;
+            ${voterTagsHtml}
+        </div>`;
     });
     
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
         updateSelectionUI();
-        if (state.status === 'ended' || isHostPage) { // 主持人不需要點擊投票
-             // 注意：主持人若要投票，這裡不能禁點擊，但為了避免誤觸，我們還是保持原樣
+        if (state.status === 'ended' || isHostPage) { 
              if (state.status === 'ended') {
                 Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
              }
@@ -196,7 +213,6 @@ function renderMeeting(state) {
     }
 }
 
-// --- 新增：渲染歷史紀錄 ---
 function renderHistory(history) {
     if (!historyContainer) return;
     if (history.length === 0) {
@@ -205,7 +221,6 @@ function renderHistory(history) {
     }
 
     let html = '';
-    // 倒序顯示 (最新的在上面)
     [...history].reverse().forEach(record => {
         const timeStr = new Date(record.timestamp).toLocaleTimeString();
         let optionsSummary = '';
@@ -282,7 +297,7 @@ window.logout = function() {
     }
 }
 
-// --- 3. 主持人邏輯 ---
+// 主持人頁面邏輯
 if (isHostPage) {
     const authOverlay = document.getElementById('host-auth-overlay');
     const pwdInput = document.getElementById('host-password-input');
@@ -387,4 +402,3 @@ if (isHostPage) {
         showToast('已套用樣板');
     };
 }
-
