@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主持人控制台</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body id="host-page">
+    <div class="host-grid">
+        
+        <div class="container">
+            <h2 style="margin-bottom:20px;">🎛 控制面板</h2>
+            <div class="pin-badge">PIN: <span id="host-pin-display">----</span></div>
+            
+            <div class="host-controls">
+                <div class="form-group">
+                    <label>快速樣板：</label>
+                    <div style="display:flex; gap:8px; margin-bottom:15px; flex-wrap:wrap;">
+                        <button class="preset-btn" onclick="applyPreset('yesno')">⭕ 是非</button>
+                        <button class="preset-btn" onclick="applyPreset('scale')">📊 評分</button>
+                        <button class="preset-btn" onclick="applyPreset('lunch')">🍱 午餐</button>
+                    </div>
+
+                    <label>題目</label>
+                    <input type="text" id="h-question" placeholder="請輸入討論議題..." value="範例：接下來的優先順序？">
+                </div>
+                
+                <div class="form-group">
+                    <label>選項</label>
+                    <input type="text" class="opt-text" value="選項 A" style="margin-bottom:8px;">
+                    <input type="text" class="opt-text" value="選項 B" style="margin-bottom:8px;">
+                    <input type="text" class="opt-text" value="選項 C" style="margin-bottom:8px;">
+                    <input type="text" class="opt-text" placeholder="選項 D..." style="margin-bottom:8px;">
+                </div>
+                
+                <div class="form-group" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:15px;">
+                    <div style="flex:1; min-width: 120px;">
+                        <label>倒數秒數</label>
+                        <input type="number" id="h-timer" value="0">
+                    </div>
+                    <div style="flex:1; display:flex; align-items:center; padding-top:25px;">
+                        <input type="checkbox" id="h-multi" style="margin-right:5px;">
+                        <label for="h-multi">複選</label>
+                    </div>
+                    <div style="flex:1; display:flex; align-items:center; padding-top:25px;">
+                        <input type="checkbox" id="h-blind" style="margin-right:5px;">
+                        <label for="h-blind" style="color:var(--primary); font-weight:bold;">🙈 盲測</label>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:10px; margin-top:20px;">
+                    <button id="clear-form-btn" class="btn" style="background:#8e8d8a; flex:1;">🧹 清空</button>
+                    <button id="start-vote-btn" class="btn" style="flex:2;">🚀 發布</button>
+                </div>
+                <button id="stop-vote-btn" class="btn btn-stop">🛑 強制結束</button>
+                <button id="export-btn" class="btn" style="background:var(--success); margin-top:10px;">📥 下載結果 (CSV)</button>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="link-info-box">
+                <div class="link-label">掃描加入會議</div>
+                <div id="qrcode" style="display:flex; justify-content:center; margin: 15px 0;"></div>
+                <div class="link-label">或輸入網址</div>
+                <a id="join-link" href="#" target="_blank" class="link-text">Loading...</a>
+                <hr style="border:0; border-top:1px dashed var(--border); margin:15px 0;">
+                <button id="open-projector-btn" class="btn" style="background:#8b5cf6;">
+                    📺 開啟大螢幕投影頁面
+                </button>
+            </div>
+
+            <h2 style="margin-bottom:20px;">📱 現場預覽</h2>
+            <div id="login-screen" class="hidden"></div>
+            <div id="vote-screen">
+                <div class="status-bar">
+                    <span id="status-text">等待中</span>
+                    <span>⏱ <span id="timer">0s</span> | 👥 <span id="total-votes">0</span></span>
+                </div>
+                <div id="question-text" class="question">等待發布...</div>
+                <div id="options-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+    <input type="hidden" id="pin-input"> 
+    <button id="join-btn" class="hidden"></button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // 主持人自動初始化
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const pin = document.getElementById('host-pin-display').textContent;
+                if(pin !== '----') {
+                    const socket = io();
+                    socket.emit('join', pin);
+                }
+            }, 500);
+
+            // 產生 QR Code
+            let baseUrl = window.location.href.replace('/host.html', '').replace(/\/$/, '');
+            const linkEl = document.getElementById('join-link');
+            linkEl.textContent = baseUrl;
+            linkEl.href = baseUrl;
+
+            new QRCode(document.getElementById("qrcode"), {
+                text: baseUrl,
+                width: 120, height: 120,
+                colorDark : "#3f4238", colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        });
+    </script>
+</body>
+</html>

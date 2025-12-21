@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即時投票</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body id="participant-page">
+    <div class="container">
+        <div id="login-screen">
+            <h1 style="text-align:center; margin-bottom:10px;">加入會議</h1>
+            <p style="text-align:center; margin-bottom:30px; color:var(--text-light); font-family:'Noto Serif TC'">Please enter your PIN</p>
+            <input type="number" id="pin-input" placeholder="0000" maxlength="4">
+            <button id="join-btn" class="btn">進入投票室</button>
+        </div>
+
+        <div id="vote-screen" class="hidden">
+            <div class="status-bar">
+                <span id="status-text">準備中</span>
+                <span>⏱ <span id="timer">0s</span> | 👥 <span id="total-votes">0</span></span>
+            </div>
+            
+            <div id="question-text" class="question"></div>
+            <div id="options-container"></div>
+            
+            <p style="text-align:center; font-size:0.85rem; color:var(--text-light); margin-top:30px; font-family:'Noto Serif TC', serif; opacity:0.8;">
+                ❧ 投票結束前可隨時修改
+            </p>
+        </div>
+    </div>
+    
+    <div id="toast"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
