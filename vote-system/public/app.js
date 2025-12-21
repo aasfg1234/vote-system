@@ -1,5 +1,18 @@
 const socket = io();
 
+// --- 隱藏捲軸邏輯 (新增) ---
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('clean') === 'true') {
+    const style = document.createElement('style');
+    // 這段 CSS 會隱藏各種瀏覽器的捲軸，但保留捲動功能 (如果需要的話)
+    style.innerHTML = `
+        ::-webkit-scrollbar { display: none; }
+        body { -ms-overflow-style: none; scrollbar-width: none; }
+    `;
+    document.head.appendChild(style);
+}
+// ----------------------------
+
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
 const voteScreen = document.getElementById('vote-screen');
@@ -55,7 +68,6 @@ function adjustFont(delta) {
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
 
-const urlParams = new URLSearchParams(window.location.search);
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
@@ -137,7 +149,7 @@ socket.on('state-update', (state) => {
     renderMeeting(state);
 });
 
-// --- 主持人監控渲染函式 (修改：顯示投票者名單) ---
+// --- 主持人監控渲染函式 ---
 function renderHostMonitor(state) {
     if (!monitorOptionsEl) return;
 
@@ -164,7 +176,6 @@ function renderHostMonitor(state) {
             highlightStyle = 'border: 2px solid var(--gold); background: #fffdf0;';
         }
 
-        // --- 產生投票者名單標籤 ---
         let votersHtml = '';
         if (state.hostVoterMap && state.hostVoterMap[opt.id] && state.hostVoterMap[opt.id].length > 0) {
             votersHtml = '<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; position:relative; z-index:2;">';
@@ -173,7 +184,6 @@ function renderHostMonitor(state) {
             });
             votersHtml += '</div>';
         }
-        // -----------------------
 
         html += `
         <div style="position:relative; margin-bottom:6px; padding:8px 10px; border:1px solid #eee; border-radius:3px; background:#fff; ${highlightStyle}">
@@ -395,7 +405,6 @@ function updateSelectionUI() {
 }
 
 function handleVote(optionId) {
-    // 主持人頁面不需要這個邏輯，因為是 iframe
     if (isHostPage) return; 
 
     if (statusTextEl && statusTextEl.textContent.includes('結束')) return;
