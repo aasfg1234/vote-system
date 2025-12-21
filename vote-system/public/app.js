@@ -27,6 +27,12 @@ let currentPin = '';
 let currentUsername = '';
 let currentPresets = []; 
 
+// --- 新增：本地確認狀態 ---
+// 用來記錄使用者是否在結果頁按了「確認/OK」
+let hasConfirmedResult = false;
+// 用來暫存最後一次的 state，方便我們在本地切換畫面時重繪
+let lastServerState = null;
+
 // --- 字體縮放邏輯 ---
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
@@ -124,9 +130,11 @@ socket.on('connect', () => {
 // 狀態渲染
 socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
+    
+    // 儲存狀態供本地切換使用
+    lastServerState = state;
     renderMeeting(state);
     
-    // 主持人：更新歷史紀錄 與 樣板按鈕
     if (isHostPage) {
         if (state.history) renderHistory(state.history);
         if (state.presets) renderPresets(state.presets);
@@ -147,33 +155,18 @@ socket.on('timer-tick', (timeLeft) => {
 });
 
 function renderMeeting(state) {
-    if (state.status === 'terminated') {
-        if (optionsContainer) {
-            optionsContainer.innerHTML = `
-                <div style="text-align:center; padding:50px 20px;">
-                    <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
-                    <h2 style="color:var(--text-main); margin-bottom:10px;">會議已結束</h2>
-                    <p style="color:var(--text-light);">感謝您的參與</p>
-                    
-                    ${isHostPage ? `
-                        <p style="font-size:0.9rem; margin-top:20px; color:var(--success);">✓ 報表已自動下載</p>
-                        <button onclick="location.href='index.html'" class="btn" style="margin-top:20px; background:var(--text-main);">🏠 回首頁 (開啟新會議)</button>
-                    ` : ''}
-                    
-                    ${isParticipantPage ? '<button onclick="location.href=\'index.html\'" class="btn" style="margin-top:30px;">回首頁</button>' : ''}
-                </div>
-            `;
-        }
-        if (questionEl) questionEl.textContent = '';
-        if (statusTextEl) statusTextEl.textContent = '已結束';
-        if (leaveBtn) leaveBtn.style.display = 'none';
-        return;
-    }
-
+    // 檢查是否為新的一題，如果是，重置確認狀態
     if (state.voteId !== currentVoteId) {
         myVotes = [];
         currentVoteId = state.voteId;
+        hasConfirmedResult = false; // 重置：新題目來了，不能再顯示金句
         updateSelectionUI(); 
+    }
+
+    // 處理會議結束
+    if (state.status === 'terminated') {
+        renderTerminatedScreen();
+        return;
     }
 
     currentSettings = state.settings;
@@ -184,19 +177,31 @@ function renderMeeting(state) {
     if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
     lastStatus = state.status;
 
-    if (state.status === 'waiting') {
-        myVotes = [];
-        if(statusTextEl) statusTextEl.textContent = '準備中';
+    // --- 關鍵修改：決定要顯示什麼畫面 ---
+    
+    // 情況 A: 伺服器在等待中 -> 顯示金句
+    // 情況 B: 投票已結束 且 使用者按了確認 -> 顯示金句 (本地等待)
+    // 注意：主持人頁面 (isHostPage) 永遠不應該被本地確認覆蓋，主持人要一直看到結果
+    const showWaitingScreen = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult && !isHostPage);
+
+    if (showWaitingScreen) {
+        // 清空本地選擇
+        if(state.status === 'waiting') myVotes = []; 
+        
+        if(statusTextEl) statusTextEl.textContent = state.status === 'ended' ? '等待下一題' : '準備中';
+        
         if(optionsContainer) optionsContainer.innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
+                ${!isHostPage ? '<div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>' : ''}
             </div>`;
         if(questionEl) questionEl.textContent = '';
         return;
     }
     
+    // 以下為正常顯示題目或結果
     if(questionEl) questionEl.textContent = state.question;
 
     if(statusTextEl) {
@@ -259,15 +264,60 @@ function renderMeeting(state) {
         </div>`;
     });
     
+    // --- 新增：如果是結束狀態，且不是主持人，顯示確認按鈕 ---
+    if (state.status === 'ended' && !isHostPage) {
+        html += `
+            <div style="margin-top: 20px; text-align: center; animation: fadeIn 0.5s;">
+                <button onclick="confirmResult()" class="btn" style="background: var(--text-main); color: #fff;">
+                    👌 收到，等待下一題
+                </button>
+            </div>
+        `;
+    }
+
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
         updateSelectionUI();
         if (state.status === 'ended' || isHostPage) { 
              if (state.status === 'ended') {
-                Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
+                Array.from(optionsContainer.children).forEach(child => {
+                    // 排除按鈕容器，只鎖定選項卡片
+                    if (child.classList.contains('option-card')) {
+                        child.style.pointerEvents = 'none';
+                    }
+                });
              }
         }
     }
+}
+
+// --- 新增：處理使用者按下確認 ---
+window.confirmResult = function() {
+    hasConfirmedResult = true;
+    // 重新渲染畫面 (這時候因為 hasConfirmedResult 為 true，會跑進金句區塊)
+    if (lastServerState) {
+        renderMeeting(lastServerState);
+    }
+}
+
+function renderTerminatedScreen() {
+    if (optionsContainer) {
+        optionsContainer.innerHTML = `
+            <div style="text-align:center; padding:50px 20px;">
+                <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
+                <h2 style="color:var(--text-main); margin-bottom:10px;">會議已結束</h2>
+                <p style="color:var(--text-light);">感謝您的參與</p>
+                ${isHostPage ? `
+                    <p style="font-size:0.9rem; margin-top:20px; color:var(--success);">✓ 報表已自動下載</p>
+                    <button onclick="location.href='index.html'" class="btn" style="margin-top:20px; background:var(--text-main);">🏠 回首頁 (開啟新會議)</button>
+                ` : ''}
+                ${isParticipantPage ? '<button onclick="location.href=\'index.html\'" class="btn" style="margin-top:30px;">回首頁</button>' : ''}
+            </div>
+        `;
+    }
+    if (questionEl) questionEl.textContent = '';
+    if (statusTextEl) statusTextEl.textContent = '已結束';
+    if (leaveBtn) leaveBtn.style.display = 'none';
 }
 
 function renderHistory(history) {
@@ -376,7 +426,7 @@ if (isHostPage) {
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const savePasswordBtn = document.getElementById('save-password-btn');
     const addPresetBtn = document.getElementById('add-preset-btn');
-    const saveHostNameBtn = document.getElementById('save-host-name-btn'); // 新增
+    const saveHostNameBtn = document.getElementById('save-host-name-btn');
     
     if (openSettingsBtn) {
         openSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
@@ -394,7 +444,6 @@ if (isHostPage) {
         });
     }
 
-    // 新增：儲存主持人暱稱
     if (saveHostNameBtn) {
         saveHostNameBtn.addEventListener('click', () => {
             const newName = document.getElementById('new-host-name').value;
@@ -450,7 +499,6 @@ if (isHostPage) {
         document.getElementById('host-pin-display').textContent = data.pin;
         currentPin = data.pin; 
         
-        // 更新本地儲存的名稱為伺服器上的主持人暱稱
         currentUsername = data.hostName || 'HOST';
         document.getElementById('new-host-name').value = currentUsername;
 
