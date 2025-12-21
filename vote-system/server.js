@@ -30,6 +30,10 @@ const userVotes = new Map();
 function broadcastState() {
     const totalVotes = userVotes.size;
 
+    // 計算目前連線人數 (加入人數)
+    const room = io.sockets.adapter.rooms.get('meeting-room');
+    const joinedCount = room ? room.size : 0;
+
     // 1. 完整數據 (給主持人 & 結束後所有人)
     const fullOptions = meetingState.options.map(opt => ({
         id: opt.id,
@@ -52,6 +56,7 @@ function broadcastState() {
         status: meetingState.status,
         question: meetingState.question,
         totalVotes: totalVotes,
+        joinedCount: joinedCount, // 傳送加入人數
         settings: meetingState.settings,
         timeLeft: meetingState.endTime ? Math.max(0, Math.round((meetingState.endTime - Date.now())/1000)) : 0
     };
@@ -173,9 +178,15 @@ io.on('connection', (socket) => {
         
         socket.emit('export-data', headers + rows);
     });
+
+    // 7. 斷線處理 (更新人數)
+    socket.on('disconnect', () => {
+        broadcastState();
+    });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
