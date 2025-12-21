@@ -29,15 +29,18 @@ let meetingState = {
     settings: { allowMulti: false, blindMode: false, duration: 0 },
     timer: null,
     endTime: null,
-    voteId: 0 
+    voteId: 0,
+    hasArchived: false // ✨ 新增：防止重複歸檔的旗標
 };
 
 let meetingHistory = []; 
 const voterRecords = new Map();
 
-// --- 歸檔功能 ---
+// --- 歸檔功能 (修改：加入防呆檢查) ---
 function archiveCurrentVote() {
-    if (!meetingState.question) return;
+    // 如果沒有題目，或是已經歸檔過了，就跳過
+    if (!meetingState.question || meetingState.hasArchived) return;
+
     const snapshot = {
         question: meetingState.question,
         options: JSON.parse(JSON.stringify(meetingState.options)), 
@@ -54,9 +57,12 @@ function archiveCurrentVote() {
     });
     snapshot.totalVotes = total;
     meetingHistory.push(snapshot);
+    
+    // 標記為已歸檔
+    meetingState.hasArchived = true; 
 }
 
-// --- 廣播狀態 (關鍵修改：排除主持人人數) ---
+// --- 廣播狀態 ---
 function broadcastState() {
     let totalVotes = 0;
     meetingState.options.forEach(opt => opt.count = 0);
@@ -77,20 +83,17 @@ function broadcastState() {
         }
     });
 
-    // --- 關鍵修改：計算真實與會者人數 ---
     const allSockets = io.sockets.adapter.rooms.get('meeting-room');
     const hostSockets = io.sockets.adapter.rooms.get('host-room');
     let realUserCount = 0;
 
     if (allSockets) {
         allSockets.forEach(socketId => {
-            // 如果這個 Socket ID 不在主持人房間內，才算是一個與會者
             if (!hostSockets || !hostSockets.has(socketId)) {
                 realUserCount++;
             }
         });
     }
-    // ------------------------------------
 
     const fullOptions = meetingState.options.map(opt => ({
         id: opt.id,
@@ -112,7 +115,7 @@ function broadcastState() {
         status: meetingState.status,
         question: meetingState.question,
         totalVotes: totalVotes,
-        joinedCount: realUserCount, // 使用過濾後的人數
+        joinedCount: realUserCount, 
         settings: meetingState.settings,
         timeLeft: meetingState.endTime ? Math.max(0, Math.round((meetingState.endTime - Date.now())/1000)) : 0,
         voteId: meetingState.voteId
@@ -154,7 +157,6 @@ io.on('connection', (socket) => {
             socket.join('meeting-room');
             socket.emit('joined', { success: true });
             
-            // 如果是主持人重連，不需要恢復投票狀態
             if (username && username !== hostName && meetingState.status === 'voting') {
                 const previousVotes = voterRecords.get(username);
                 if (previousVotes) socket.emit('vote-confirmed', previousVotes);
@@ -177,14 +179,14 @@ io.on('connection', (socket) => {
                     settings: { allowMulti: false, blindMode: false, duration: 0 },
                     timer: null,
                     endTime: null,
-                    voteId: 0 
+                    voteId: 0,
+                    hasArchived: false
                 };
                 meetingHistory = [];
                 voterRecords.clear();
             }
 
             socket.join('host-room'); 
-            // 主持人也加入 meeting-room 以便接收廣播，但會在計數時被排除
             socket.join('meeting-room'); 
             
             socket.emit('host-login-success', { pin: meetingState.pin, hostName: hostName });
@@ -210,15 +212,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('start-vote', (data) => {
-        if (meetingState.question && meetingState.status !== 'waiting' && meetingState.status !== 'terminated') {
-            archiveCurrentVote();
-        }
+        // 先嘗試歸檔上一題 (如果還沒歸檔的話)
+        archiveCurrentVote();
+        
         resetVotes();
         meetingState.status = 'voting';
         meetingState.question = data.question;
         meetingState.settings.allowMulti = data.allowMulti;
         meetingState.settings.blindMode = data.blindMode;
         meetingState.voteId = Date.now(); 
+        meetingState.hasArchived = false; // ✨ 重置：新題目還沒歸檔
         
         meetingState.options = data.options.map((opt, index) => ({
             id: index,
@@ -248,13 +251,17 @@ io.on('connection', (socket) => {
         if (meetingState.timer) clearInterval(meetingState.timer);
         meetingState.status = 'ended';
         meetingState.endTime = null;
+        
+        // ✨ 關鍵修改：停止投票時，立刻執行歸檔
+        archiveCurrentVote();
+        
         broadcastState();
     }
 
     socket.on('terminate-meeting', () => {
-        if (meetingState.question && meetingState.status !== 'waiting') {
-            archiveCurrentVote();
-        }
+        // 嘗試歸檔 (利用 hasArchived 旗標避免重複)
+        archiveCurrentVote();
+        
         if (meetingState.timer) clearInterval(meetingState.timer);
         meetingState.status = 'terminated';
         meetingState.question = '';
@@ -262,14 +269,11 @@ io.on('connection', (socket) => {
         broadcastState();
     });
 
-    // --- 關鍵修改：主持人不能投票 ---
     socket.on('submit-vote', (data) => {
         if (meetingState.status !== 'voting') return;
         const votes = data.votes;
         const username = data.username;
         
-        // 安全檢查：如果是主持人，直接忽略
-        // 判斷方式： socket 是否在 host-room 中
         if (socket.rooms.has('host-room')) {
             return;
         }
