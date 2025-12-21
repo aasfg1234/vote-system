@@ -4,6 +4,7 @@ const socket = io();
 const loginScreen = document.getElementById('login-screen');
 const voteScreen = document.getElementById('vote-screen');
 const pinInput = document.getElementById('pin-input');
+const usernameInput = document.getElementById('username-input'); // 新增
 const joinBtn = document.getElementById('join-btn');
 const questionEl = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
@@ -16,10 +17,9 @@ const toastEl = document.getElementById('toast');
 let myVotes = [];
 let currentSettings = {};
 let lastStatus = 'waiting';
-// 新增：紀錄目前的題目 ID
 let currentVoteId = 0; 
-// 新增：紀錄目前使用的 PIN 碼 (為了斷線重連用)
 let currentPin = '';
+let currentUsername = localStorage.getItem('vote_username') || ''; // 從本地讀取名字
 
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
@@ -28,22 +28,16 @@ const urlParams = new URLSearchParams(window.location.search);
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-function getDeviceId() {
-    let id = localStorage.getItem('vote_device_id');
-    if (!id) {
-        id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now();
-        localStorage.setItem('vote_device_id', id);
-    }
-    return id;
+// 初始化：如果之前輸入過名字，自動填入
+if (usernameInput && currentUsername) {
+    usernameInput.value = currentUsername;
 }
-const deviceId = getDeviceId();
 
-// --- 解決人數變 0 的關鍵：斷線自動重連邏輯 ---
+// 斷線重連邏輯
 socket.on('connect', () => {
-    // 如果我們之前已經輸入過 PIN，連線恢復時自動重新加入
-    if (currentPin) {
-        socket.emit('join', { pin: currentPin, deviceId: deviceId });
-        console.log('Reconnecting to room...');
+    if (currentPin && currentUsername) {
+        socket.emit('join', { pin: currentPin, username: currentUsername });
+        console.log('Reconnecting...');
     }
 });
 
@@ -62,11 +56,17 @@ if (isParticipantPage) {
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
             const pin = pinInput.value;
+            const username = usernameInput.value.trim();
+
+            if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
             
-            // 儲存 PIN 碼以供重連使用
+            // 儲存資訊
             currentPin = pin;
-            socket.emit('join', { pin: pin, deviceId: deviceId });
+            currentUsername = username;
+            localStorage.setItem('vote_username', username); // 記住名字
+
+            socket.emit('join', { pin: pin, username: username });
         });
     }
 
@@ -76,7 +76,6 @@ if (isParticipantPage) {
             voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
-            // 如果加入失敗，清空 PIN 避免無限重試
             currentPin = ''; 
         }
     });
@@ -102,12 +101,9 @@ socket.on('timer-tick', (timeLeft) => {
 });
 
 function renderMeeting(state) {
-    // --- 解決自動選取上一輪的關鍵：檢查題目 ID ---
     if (state.voteId !== currentVoteId) {
-        // 發現是新題目，清空本地選擇
         myVotes = [];
         currentVoteId = state.voteId;
-        // 如果是從 Waiting 切過來，可能會殘留 UI，這裡強制刷新
         updateSelectionUI(); 
     }
 
@@ -120,7 +116,6 @@ function renderMeeting(state) {
     lastStatus = state.status;
 
     if (state.status === 'waiting') {
-        // 等待時也清空
         myVotes = [];
         if(statusTextEl) statusTextEl.textContent = '準備中';
         if(optionsContainer) optionsContainer.innerHTML = `
@@ -171,7 +166,6 @@ function renderMeeting(state) {
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
         updateSelectionUI();
-        
         if (state.status === 'ended') {
             Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
         }
@@ -208,7 +202,8 @@ function handleVote(optionId) {
     }
     
     updateSelectionUI();
-    socket.emit('submit-vote', { votes: myVotes, deviceId: deviceId });
+    // 提交時傳送 username
+    socket.emit('submit-vote', { votes: myVotes, username: currentUsername });
 }
 
 function showToast(msg) {
@@ -244,8 +239,9 @@ if (isHostPage) {
         authOverlay.style.opacity = '0';
         setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
-        currentPin = data.pin; // 主持人也要紀錄 PIN
-        socket.emit('join', { pin: data.pin, deviceId: null }); 
+        currentPin = data.pin; 
+        currentUsername = 'HOST'; // 主持人也給個名字
+        socket.emit('join', { pin: data.pin, username: 'HOST' }); 
         showToast('🔓 控制台已解鎖');
     });
 
@@ -257,6 +253,7 @@ if (isHostPage) {
         setTimeout(() => pwdInput.style.animation = '', 500);
     });
 
+    // 主持人控制功能 (保持不變)
     document.getElementById('start-vote-btn').addEventListener('click', () => {
         const question = document.getElementById('h-question').value;
         if(!question) return showToast('請輸入題目');
