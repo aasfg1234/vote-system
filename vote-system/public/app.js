@@ -1,6 +1,6 @@
 const socket = io();
 
-// --- 隱藏捲軸邏輯 ---
+// --- 1. 隱藏捲軸邏輯 ---
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('clean') === 'true') {
     const style = document.createElement('style');
@@ -11,30 +11,7 @@ if (urlParams.get('clean') === 'true') {
     document.head.appendChild(style);
 }
 
-// DOM Elements
-const loginScreen = document.getElementById('login-screen');
-const voteScreen = document.getElementById('vote-screen');
-const pinInput = document.getElementById('pin-input');
-const usernameInput = document.getElementById('username-input');
-const joinBtn = document.getElementById('join-btn');
-const leaveBtn = document.getElementById('leave-btn');
-const questionEl = document.getElementById('question-text');
-const optionsContainer = document.getElementById('options-container');
-const totalVotesEl = document.getElementById('total-votes');
-const joinedCountEl = document.getElementById('joined-count'); 
-const timerEl = document.getElementById('timer');
-const statusTextEl = document.getElementById('status-text');
-const toastEl = document.getElementById('toast');
-const historyContainer = document.getElementById('history-container');
-const presetButtonsContainer = document.getElementById('preset-buttons');
-const fontUpBtn = document.getElementById('font-up'); 
-const fontDownBtn = document.getElementById('font-down'); 
-
-// 主持人專用監控元素
-const monitorCountEl = document.getElementById('monitor-count');
-const monitorTotalEl = document.getElementById('monitor-total');
-const monitorOptionsEl = document.getElementById('monitor-options');
-
+// --- 2. 全域變數與設定 ---
 let myVotes = [];
 let currentSettings = {};
 let lastStatus = 'waiting';
@@ -45,30 +22,16 @@ let currentPresets = [];
 let hasConfirmedResult = false;
 let lastServerState = null;
 
-// --- 字體縮放 ---
+// 字體大小設定
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
 
-if(fontUpBtn && fontDownBtn) {
-    fontUpBtn.addEventListener('click', () => adjustFont(0.1));
-    fontDownBtn.addEventListener('click', () => adjustFont(-0.1));
-}
-
-function adjustFont(delta) {
-    currentFontSize += delta;
-    if (currentFontSize < 0.6) currentFontSize = 0.6;
-    if (currentFontSize > 2.2) currentFontSize = 2.2;
-    document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
-    localStorage.setItem('vote_font_scale', currentFontSize);
-    showToast(`字體大小: ${Math.round(currentFontSize * 100)}%`);
-}
-
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
-
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
+// 金句庫
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
     "「選擇本身就是一種放棄，但也是一種獲得。」",
@@ -79,14 +42,74 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// 自動登入
+// --- 3. DOM 元素獲取 (使用安全檢查) ---
+// 為了避免報錯，我們在後面使用時都會檢查元素是否存在
+const getEl = (id) => document.getElementById(id);
+
+const loginScreen = getEl('login-screen');
+const voteScreen = getEl('vote-screen');
+const pinInput = getEl('pin-input');
+const usernameInput = getEl('username-input');
+const joinBtn = getEl('join-btn');
+const leaveBtn = getEl('leave-btn');
+const questionEl = getEl('question-text');
+const optionsContainer = getEl('options-container');
+const totalVotesEl = getEl('total-votes');
+const joinedCountEl = getEl('joined-count'); 
+const timerEl = getEl('timer');
+const statusTextEl = getEl('status-text');
+const toastEl = getEl('toast');
+const historyContainer = getEl('history-container');
+const presetButtonsContainer = getEl('preset-buttons');
+const fontUpBtn = getEl('font-up'); 
+const fontDownBtn = getEl('font-down'); 
+
+// 主持人專用
+const monitorCountEl = getEl('monitor-count');
+const monitorTotalEl = getEl('monitor-total');
+const monitorOptionsEl = getEl('monitor-options');
+
+// --- 4. 關鍵功能：套用樣板 (移至全域，確保可用) ---
+window.applyPreset = function(index) {
+    if (!currentPresets || !currentPresets[index]) return;
+    const preset = currentPresets[index];
+    const qInput = getEl('h-question');
+    const optInputs = document.querySelectorAll('.opt-text');
+    
+    if(qInput) qInput.value = preset.question;
+    
+    if(optInputs) {
+        optInputs.forEach(i => i.value = '');
+        preset.options.forEach((optText, i) => {
+            if (optInputs[i]) optInputs[i].value = optText;
+        });
+    }
+    showToast('已套用：' + preset.name);
+};
+
+// --- 5. 事件監聽綁定 ---
+
+// 字體調整
+if(fontUpBtn) fontUpBtn.addEventListener('click', () => adjustFont(0.1));
+if(fontDownBtn) fontDownBtn.addEventListener('click', () => adjustFont(-0.1));
+
+function adjustFont(delta) {
+    currentFontSize += delta;
+    if (currentFontSize < 0.6) currentFontSize = 0.6;
+    if (currentFontSize > 2.2) currentFontSize = 2.2;
+    document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
+    localStorage.setItem('vote_font_scale', currentFontSize);
+    showToast(`字體大小: ${Math.round(currentFontSize * 100)}%`);
+}
+
+// 自動登入 (僅限與會者)
 if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
     if (storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
-        loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2><p style="text-align:center; color:var(--text-light);">${currentUsername}</p>`;
+        if(loginScreen) loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2><p style="text-align:center; color:var(--text-light);">${currentUsername}</p>`;
         socket.emit('join', { pin: currentPin, username: currentUsername });
     }
 
@@ -112,8 +135,8 @@ if (isParticipantPage) {
 
     socket.on('joined', (data) => {
         if (data.success) {
-            loginScreen.classList.add('hidden');
-            voteScreen.classList.remove('hidden');
+            if(loginScreen) loginScreen.classList.add('hidden');
+            if(voteScreen) voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
             localStorage.removeItem('vote_pin');
@@ -132,6 +155,7 @@ socket.on('connect', () => {
     }
 });
 
+// --- 6. 狀態渲染 ---
 socket.on('state-update', (state) => {
     if (isHostPage) {
         renderHostMonitor(state); 
@@ -144,6 +168,7 @@ socket.on('state-update', (state) => {
     renderMeeting(state);
 });
 
+// --- 主持人監控 ---
 function renderHostMonitor(state) {
     if (!monitorOptionsEl) return;
     if (monitorCountEl) monitorCountEl.textContent = state.joinedCount;
@@ -230,14 +255,12 @@ function renderMeeting(state) {
         if(state.status === 'waiting') myVotes = []; 
         if(statusTextEl) statusTextEl.textContent = state.status === 'ended' ? '等待下一題' : '準備中';
         
-        // --- 修改：移除了 [切換使用者] 按鈕 ---
         if(optionsContainer) optionsContainer.innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
             </div>`;
-        // ------------------------------------
         
         if(questionEl) questionEl.textContent = '';
         return;
@@ -430,18 +453,20 @@ window.logout = function() {
     location.href = 'index.html';
 }
 
+// --- 7. 主持人頁面專用邏輯 ---
 if (isHostPage) {
-    const authOverlay = document.getElementById('host-auth-overlay');
-    const pwdInput = document.getElementById('host-password-input');
-    const loginBtn = document.getElementById('host-login-submit');
-    const errorMsg = document.getElementById('login-error-msg');
-    const terminateBtn = document.getElementById('terminate-btn');
-    const settingsModal = document.getElementById('settings-modal');
-    const openSettingsBtn = document.getElementById('open-settings-btn');
-    const closeSettingsBtn = document.getElementById('close-settings-btn');
-    const savePasswordBtn = document.getElementById('save-password-btn');
-    const addPresetBtn = document.getElementById('add-preset-btn');
-    const saveHostNameBtn = document.getElementById('save-host-name-btn');
+    const authOverlay = getEl('host-auth-overlay');
+    const pwdInput = getEl('host-password-input');
+    const loginBtn = getEl('host-login-submit');
+    const errorMsg = getEl('login-error-msg');
+    
+    // 設定視窗
+    const settingsModal = getEl('settings-modal');
+    const openSettingsBtn = getEl('open-settings-btn');
+    const closeSettingsBtn = getEl('close-settings-btn');
+    const savePasswordBtn = getEl('save-password-btn');
+    const addPresetBtn = getEl('add-preset-btn');
+    const saveHostNameBtn = getEl('save-host-name-btn');
     
     if (openSettingsBtn) {
         openSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
@@ -450,7 +475,7 @@ if (isHostPage) {
 
     if (savePasswordBtn) {
         savePasswordBtn.addEventListener('click', () => {
-            const newPwd = document.getElementById('new-host-password').value;
+            const newPwd = getEl('new-host-password').value;
             if (newPwd.trim()) socket.emit('change-password', newPwd);
             else showToast('密碼不能為空');
         });
@@ -458,7 +483,7 @@ if (isHostPage) {
 
     if (saveHostNameBtn) {
         saveHostNameBtn.addEventListener('click', () => {
-            const newName = document.getElementById('new-host-name').value;
+            const newName = getEl('new-host-name').value;
             if (newName.trim()) socket.emit('change-host-name', newName.trim());
             else showToast('暱稱不能為空');
         });
@@ -466,16 +491,16 @@ if (isHostPage) {
 
     if (addPresetBtn) {
         addPresetBtn.addEventListener('click', () => {
-            const name = document.getElementById('new-preset-name').value;
-            const question = document.getElementById('new-preset-question').value;
-            const optionsStr = document.getElementById('new-preset-options').value;
+            const name = getEl('new-preset-name').value;
+            const question = getEl('new-preset-question').value;
+            const optionsStr = getEl('new-preset-options').value;
             if (name && question && optionsStr) {
                 const options = optionsStr.split(',').map(s => s.trim()).filter(s => s);
                 socket.emit('add-preset', { name, question, options });
                 showToast('樣板已新增');
-                document.getElementById('new-preset-name').value = '';
-                document.getElementById('new-preset-question').value = '';
-                document.getElementById('new-preset-options').value = '';
+                getEl('new-preset-name').value = '';
+                getEl('new-preset-question').value = '';
+                getEl('new-preset-options').value = '';
             } else {
                 showToast('請填寫完整資訊');
             }
@@ -484,7 +509,7 @@ if (isHostPage) {
     
     socket.on('password-updated', () => {
         showToast('密碼修改成功');
-        document.getElementById('new-host-password').value = '';
+        getEl('new-host-password').value = '';
     });
 
     socket.on('host-name-updated', (newName) => {
@@ -498,16 +523,16 @@ if (isHostPage) {
         socket.emit('host-login', pwd);
     }
 
-    loginBtn.addEventListener('click', attemptLogin);
-    pwdInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') attemptLogin(); });
+    if(loginBtn) loginBtn.addEventListener('click', attemptLogin);
+    if(pwdInput) pwdInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') attemptLogin(); });
 
     socket.on('host-login-success', (data) => {
         authOverlay.style.opacity = '0';
         setTimeout(() => authOverlay.remove(), 500);
-        document.getElementById('host-pin-display').textContent = data.pin;
+        getEl('host-pin-display').textContent = data.pin;
         currentPin = data.pin; 
         currentUsername = data.hostName || 'HOST';
-        document.getElementById('new-host-name').value = currentUsername;
+        if(getEl('new-host-name')) getEl('new-host-name').value = currentUsername;
         socket.emit('join', { pin: data.pin, username: currentUsername }); 
         showToast('🔓 控制台已解鎖');
     });
@@ -520,31 +545,38 @@ if (isHostPage) {
         setTimeout(() => pwdInput.style.animation = '', 500);
     });
 
-    document.getElementById('start-vote-btn').addEventListener('click', () => {
-        const question = document.getElementById('h-question').value;
-        if(!question) return showToast('請輸入題目');
-        const optInputs = document.querySelectorAll('.opt-text');
-        const options = [];
-        const colors = ['#84a98c', '#6b705c', '#d66853', '#ddbea9', '#3f4238', '#8e8d8a'];
-        optInputs.forEach((input, idx) => {
-            if(input.value.trim()) options.push({ text: input.value, color: colors[idx % colors.length] });
+    const startBtn = getEl('start-vote-btn');
+    if(startBtn) {
+        startBtn.addEventListener('click', () => {
+            const question = getEl('h-question').value;
+            if(!question) return showToast('請輸入題目');
+            const optInputs = document.querySelectorAll('.opt-text');
+            const options = [];
+            const colors = ['#84a98c', '#6b705c', '#d66853', '#ddbea9', '#3f4238', '#8e8d8a'];
+            optInputs.forEach((input, idx) => {
+                if(input.value.trim()) options.push({ text: input.value, color: colors[idx % colors.length] });
+            });
+            if(options.length < 2) return showToast('至少需要兩個選項');
+
+            socket.emit('start-vote', {
+                question, options,
+                duration: parseInt(getEl('h-timer').value) || 0,
+                allowMulti: getEl('h-multi').checked,
+                blindMode: getEl('h-blind').checked
+            });
+            showToast('投票已開始');
         });
-        if(options.length < 2) return showToast('至少需要兩個選項');
+    }
 
-        socket.emit('start-vote', {
-            question, options,
-            duration: parseInt(document.getElementById('h-timer').value) || 0,
-            allowMulti: document.getElementById('h-multi').checked,
-            blindMode: document.getElementById('h-blind').checked
+    const stopBtn = getEl('stop-vote-btn');
+    if(stopBtn) {
+        stopBtn.addEventListener('click', () => {
+            socket.emit('stop-vote');
+            showToast('已強制結束');
         });
-        showToast('投票已開始');
-    });
+    }
 
-    document.getElementById('stop-vote-btn').addEventListener('click', () => {
-        socket.emit('stop-vote');
-        showToast('已強制結束');
-    });
-
+    const terminateBtn = getEl('terminate-btn');
     if (terminateBtn) {
         terminateBtn.addEventListener('click', () => {
             if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出，並自動下載報表)')) {
@@ -555,21 +587,22 @@ if (isHostPage) {
         });
     }
 
-    document.getElementById('clear-form-btn').addEventListener('click', () => {
-        document.getElementById('h-question').value = '';
-        document.querySelectorAll('.opt-text').forEach((input, i) => input.value = i<2 ? (i===0?'同意':'不同意') : '');
-        showToast('表格已重置');
-    });
+    const clearBtn = getEl('clear-form-btn');
+    if(clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            getEl('h-question').value = '';
+            document.querySelectorAll('.opt-text').forEach((input, i) => input.value = i<2 ? (i===0?'同意':'不同意') : '');
+            showToast('表格已重置');
+        });
+    }
 
-    document.getElementById('export-btn').addEventListener('click', () => {
-        socket.emit('request-export');
-        showToast('正在準備檔案...');
-    });
-    
-    document.getElementById('open-projector-btn').addEventListener('click', () => {
-        const url = window.location.href.replace('host.html', 'participant.html') + '?mode=projector';
-        window.open(url, 'ProjectorWindow', 'width=1024,height=768');
-    });
+    const exportBtn = getEl('export-btn');
+    if(exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            socket.emit('request-export');
+            showToast('正在準備檔案...');
+        });
+    }
 
     socket.on('export-data', (csvContent) => {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -581,17 +614,4 @@ if (isHostPage) {
         link.click();
         document.body.removeChild(link);
     });
-
-    window.applyPreset = function(index) {
-        if (!currentPresets[index]) return;
-        const preset = currentPresets[index];
-        const qInput = document.getElementById('h-question');
-        const optInputs = document.querySelectorAll('.opt-text');
-        qInput.value = preset.question;
-        optInputs.forEach(i => i.value = '');
-        preset.options.forEach((optText, i) => {
-            if (optInputs[i]) optInputs[i].value = optText;
-        });
-        showToast('已套用：' + preset.name);
-    };
 }
