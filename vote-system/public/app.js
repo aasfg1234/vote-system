@@ -64,7 +64,7 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// 自動登入
+// 自動登入 (只在與會者頁面執行)
 if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
@@ -118,13 +118,16 @@ socket.on('connect', () => {
 });
 
 socket.on('state-update', (state) => {
-    if (!voteScreen && !isHostPage) return; 
-    lastServerState = state;
-    renderMeeting(state);
+    // 主持人頁面：只更新歷史紀錄和樣板，不渲染投票介面 (因為是 iframe)
     if (isHostPage) {
         if (state.history) renderHistory(state.history);
         if (state.presets) renderPresets(state.presets);
+        return; 
     }
+
+    if (!voteScreen) return; 
+    lastServerState = state;
+    renderMeeting(state);
 });
 
 socket.on('vote-confirmed', (votes) => {
@@ -172,7 +175,7 @@ function renderMeeting(state) {
                 <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
                 <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
                 <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
-                ${!isHostPage ? '<div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>' : ''}
+                <div style="margin-top:30px; font-size:0.8rem; color:#ccc; cursor:pointer;" onclick="logout()">[切換使用者]</div>
             </div>`;
         if(questionEl) questionEl.textContent = '';
         return;
@@ -202,14 +205,8 @@ function renderMeeting(state) {
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
-        let voterTagsHtml = '';
-        if (isHostPage && state.hostVoterMap && state.hostVoterMap[opt.id]) {
-            voterTagsHtml = '<div class="voter-tags">';
-            state.hostVoterMap[opt.id].forEach(name => {
-                voterTagsHtml += `<span class="voter-tag">${name}</span>`;
-            });
-            voterTagsHtml += '</div>';
-        }
+        // 主持人現在看不到名單了，因為他在 iframe 外面，只能從歷史紀錄看
+        // 但 iframe 裡面的他如果按了結果確認，可以看到結果
 
         let resultClass = '';
         let crownHtml = '';
@@ -226,7 +223,7 @@ function renderMeeting(state) {
         <div class="option-card ${resultClass}" 
              id="opt-${opt.id}"
              onclick="handleVote(${opt.id})" 
-             style="border-left: 5px solid ${opt.color}; cursor: ${isHostPage ? 'default' : 'pointer'};">
+             style="border-left: 5px solid ${opt.color}; cursor:pointer;">
              
             ${crownHtml}
             <div class="stamp-mark" style="display:none;">已選</div>
@@ -236,11 +233,10 @@ function renderMeeting(state) {
                 <span class="option-text">${opt.text}</span>
                 <span class="vote-stats" style="${isBlind ? 'color:#cbd5e1' : ''}">${displayText}</span>
             </div>
-            ${voterTagsHtml}
         </div>`;
     });
     
-    if (state.status === 'ended' && !isHostPage) {
+    if (state.status === 'ended') {
         html += `
             <div style="margin-top: 20px; text-align: center; animation: fadeIn 0.5s;">
                 <button onclick="confirmResult()" class="btn" style="background: var(--text-main); color: #fff;">
@@ -253,8 +249,7 @@ function renderMeeting(state) {
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
         updateSelectionUI();
-        if (state.status === 'ended' || isHostPage) { 
-             // 主持人頁面：卡片鎖死，不能互動
+        if (state.status === 'ended') { 
              Array.from(optionsContainer.children).forEach(child => {
                 if (child.classList.contains('option-card')) {
                     child.style.pointerEvents = 'none';
@@ -343,7 +338,6 @@ function updateSelectionUI() {
 }
 
 function handleVote(optionId) {
-    // --- 關鍵修改：如果是主持人，禁止執行任何投票邏輯 ---
     if (isHostPage) return; 
 
     if (statusTextEl && statusTextEl.textContent.includes('結束')) return;
