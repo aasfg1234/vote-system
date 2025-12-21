@@ -160,14 +160,14 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 .history-title { font-family: 'Noto Serif TC'; font-weight: bold; margin-bottom: 10px; color: var(--text-main); }
 .history-stats { font-size: 0.9rem; color: var(--text-light); }
 
-/* --- 修改重點：版面比例調整 --- */
+/* --- 修改：把左側固定寬度加大到 480px --- */
 .host-grid { 
     display: grid; 
-    grid-template-columns: 360px 1fr; /* 左邊固定，右邊自動填滿 */
+    grid-template-columns: 480px 1fr; /* 這裡改成了 480px */
     gap: 40px; 
     width: 100%; 
-    max-width: 98vw; /* 幾乎全螢幕寬度 */
-    height: 95vh;    /* 幾乎全螢幕高度 */
+    max-width: 98vw; 
+    height: 95vh;
 }
 @media (max-width: 900px) { 
     .host-grid { 
@@ -175,7 +175,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
         height: auto; 
     } 
 }
-/* -------------------------- */
+/* -------------------------------------- */
 
 .pin-badge { background: var(--text-main); color: #fff; padding: 4px 12px; font-family: 'Noto Serif TC'; border-radius: 50px; display: inline-block; margin-bottom: 20px; }
 #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text-main); color: white; padding: 12px 24px; border-radius: 2px; font-family: 'Noto Serif TC'; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
