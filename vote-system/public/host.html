@@ -98,16 +98,22 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
-    <script>
+   <script>
         // 頁面載入後產生 QR Code
         window.addEventListener('load', () => {
-            let baseUrl = window.location.href.replace('/host.html', '').replace(/\/$/, '');
+            // 原本是取代 /host.html，現在我們要明確指向 /participant.html
+            let baseUrl = window.location.href.replace('/host.html', '');
+            if(baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+            
+            // 關鍵修改：讓 QR Code 直接導向 participant.html
+            const targetUrl = baseUrl + '/participant.html';
+
             const linkEl = document.getElementById('join-link');
-            linkEl.textContent = baseUrl;
-            linkEl.href = baseUrl;
+            linkEl.textContent = targetUrl;
+            linkEl.href = targetUrl;
 
             new QRCode(document.getElementById("qrcode"), {
-                text: baseUrl,
+                text: targetUrl, // 掃描後直接進與會者頁面
                 width: 120, height: 120,
                 colorDark : "#3f4238", colorLight : "#ffffff",
                 correctLevel : QRCode.CorrectLevel.H
@@ -116,4 +122,5 @@
     </script>
 </body>
 </html>
+
 
