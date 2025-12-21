@@ -16,29 +16,37 @@ const toastEl = document.getElementById('toast');
 let myVotes = [];
 let currentSettings = {};
 let lastStatus = 'waiting';
+// 新增：紀錄目前的題目 ID
+let currentVoteId = 0; 
+// 新增：紀錄目前使用的 PIN 碼 (為了斷線重連用)
+let currentPin = '';
 
-// 判斷目前是哪個頁面
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
 
-// 投影模式檢測
 const urlParams = new URLSearchParams(window.location.search);
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// --- 新增：取得或產生唯一裝置 ID ---
 function getDeviceId() {
     let id = localStorage.getItem('vote_device_id');
     if (!id) {
-        // 如果沒有，產生一個隨機 ID 並存起來
         id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now();
         localStorage.setItem('vote_device_id', id);
     }
     return id;
 }
-const deviceId = getDeviceId(); // 執行取得 ID
+const deviceId = getDeviceId();
 
-// 金句庫
+// --- 解決人數變 0 的關鍵：斷線自動重連邏輯 ---
+socket.on('connect', () => {
+    // 如果我們之前已經輸入過 PIN，連線恢復時自動重新加入
+    if (currentPin) {
+        socket.emit('join', { pin: currentPin, deviceId: deviceId });
+        console.log('Reconnecting to room...');
+    }
+});
+
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
     "「選擇本身就是一種放棄，但也是一種獲得。」",
@@ -56,7 +64,8 @@ if (isParticipantPage) {
             const pin = pinInput.value;
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
             
-            // 重點修改：加入時傳送 deviceId
+            // 儲存 PIN 碼以供重連使用
+            currentPin = pin;
             socket.emit('join', { pin: pin, deviceId: deviceId });
         });
     }
@@ -67,11 +76,13 @@ if (isParticipantPage) {
             voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
+            // 如果加入失敗，清空 PIN 避免無限重試
+            currentPin = ''; 
         }
     });
 }
 
-// --- 2. 狀態渲染 (通用) ---
+// --- 2. 狀態渲染 ---
 socket.on('state-update', (state) => {
     if (!voteScreen && !isHostPage) return; 
     renderMeeting(state);
@@ -79,9 +90,6 @@ socket.on('state-update', (state) => {
 
 socket.on('vote-confirmed', (votes) => {
     myVotes = votes;
-    // 收到確認後重新渲染，確保選取狀態正確
-    // 我們可以觸發一次畫面更新，但因為 state-update 會來，所以這裡主要用來提示
-    // 這裡我們手動更新 UI 的選取狀態會比較即時
     updateSelectionUI();
     showToast('投票已記錄');
 });
@@ -94,6 +102,15 @@ socket.on('timer-tick', (timeLeft) => {
 });
 
 function renderMeeting(state) {
+    // --- 解決自動選取上一輪的關鍵：檢查題目 ID ---
+    if (state.voteId !== currentVoteId) {
+        // 發現是新題目，清空本地選擇
+        myVotes = [];
+        currentVoteId = state.voteId;
+        // 如果是從 Waiting 切過來，可能會殘留 UI，這裡強制刷新
+        updateSelectionUI(); 
+    }
+
     currentSettings = state.settings;
     if(totalVotesEl) totalVotesEl.textContent = state.totalVotes;
     if(joinedCountEl) joinedCountEl.textContent = state.joinedCount;
@@ -103,8 +120,8 @@ function renderMeeting(state) {
     lastStatus = state.status;
 
     if (state.status === 'waiting') {
-        // 重置本地投票紀錄，避免顯示上一題的選擇
-        myVotes = []; 
+        // 等待時也清空
+        myVotes = [];
         if(statusTextEl) statusTextEl.textContent = '準備中';
         if(optionsContainer) optionsContainer.innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
@@ -135,7 +152,6 @@ function renderMeeting(state) {
         const displayText = isBlind ? '???' : `${opt.percent}% (${opt.count}票)`;
         const bgOpacity = isBlind ? 0 : 0.15;
         
-        // 這裡先不加 selected class，稍後由 updateSelectionUI 統一處理
         html += `
         <div class="option-card" 
              id="opt-${opt.id}"
@@ -154,7 +170,7 @@ function renderMeeting(state) {
     
     if(optionsContainer) {
         optionsContainer.innerHTML = html;
-        updateSelectionUI(); // 渲染完後立即更新選取狀態
+        updateSelectionUI();
         
         if (state.status === 'ended') {
             Array.from(optionsContainer.children).forEach(child => child.style.pointerEvents = 'none');
@@ -162,7 +178,6 @@ function renderMeeting(state) {
     }
 }
 
-// 獨立出來的 UI 更新函式，負責印章和邊框顏色
 function updateSelectionUI() {
     if (!optionsContainer) return;
     const cards = optionsContainer.querySelectorAll('.option-card');
@@ -192,10 +207,7 @@ function handleVote(optionId) {
         myVotes = [optionId];
     }
     
-    // UI 先反應，增加流暢度
     updateSelectionUI();
-
-    // 重點修改：提交時帶上 deviceId
     socket.emit('submit-vote', { votes: myVotes, deviceId: deviceId });
 }
 
@@ -232,7 +244,7 @@ if (isHostPage) {
         authOverlay.style.opacity = '0';
         setTimeout(() => authOverlay.remove(), 500);
         document.getElementById('host-pin-display').textContent = data.pin;
-        // 主持人也加入，方便預覽，但主持人不應該用 deviceId 投票影響結果，所以傳 null
+        currentPin = data.pin; // 主持人也要紀錄 PIN
         socket.emit('join', { pin: data.pin, deviceId: null }); 
         showToast('🔓 控制台已解鎖');
     });
