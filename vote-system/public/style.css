@@ -160,23 +160,6 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 .history-title { font-family: 'Noto Serif TC'; font-weight: bold; margin-bottom: 10px; color: var(--text-main); }
 .history-stats { font-size: 0.9rem; color: var(--text-light); }
 
-/* --- 修改：把左側固定寬度加大到 480px --- */
-.host-grid { 
-    display: grid; 
-    grid-template-columns: 480px 1fr; /* 這裡改成了 480px */
-    gap: 40px; 
-    width: 100%; 
-    max-width: 98vw; 
-    height: 95vh;
-}
-@media (max-width: 900px) { 
-    .host-grid { 
-        grid-template-columns: 1fr; 
-        height: auto; 
-    } 
-}
-/* -------------------------------------- */
-
 .pin-badge { background: var(--text-main); color: #fff; padding: 4px 12px; font-family: 'Noto Serif TC'; border-radius: 50px; display: inline-block; margin-bottom: 20px; }
 #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text-main); color: white; padding: 12px 24px; border-radius: 2px; font-family: 'Noto Serif TC'; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
 .hidden { display: none !important; }
@@ -214,6 +197,38 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 }
 .font-btn:active {
     transform: translateY(0);
+}
+
+/* --- 版面配置 --- */
+.host-grid { 
+    display: grid; 
+    grid-template-columns: 480px 1fr; 
+    gap: 40px; 
+    width: 100%; 
+    max-width: 98vw; 
+    height: 95vh;
+}
+
+/* 預覽視窗的預設樣式 (桌面版) */
+.preview-container {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- 手機版 RWD --- */
+@media (max-width: 900px) { 
+    .host-grid { 
+        grid-template-columns: 1fr; 
+        height: auto; 
+    } 
+    
+    /* 關鍵修改：手機上強制預覽視窗至少 800px 高 */
+    .preview-container {
+        height: 800px !important;
+        min-height: 80vh;
+    }
 }
 
 body.projector-mode { background: white; padding: 0; overflow: hidden; }
