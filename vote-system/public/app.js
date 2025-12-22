@@ -126,6 +126,30 @@ if (isHostPage) {
     const createBtn = getEl('create-meeting-btn');
     const nameInput = getEl('host-name-input');
     
+    // [新增] 檢查是否有之前的會議記錄
+    const storedHostPin = localStorage.getItem('vote_host_pin');
+    if (storedHostPin) {
+        // 改變 UI 顯示 "正在恢復..."
+        getEl('host-auth-overlay').innerHTML = `
+            <div class="container" style="max-width:400px; text-align:center; padding:50px;">
+                <div style="font-size:3rem; margin-bottom:20px;">🔄</div>
+                <h2 style="margin-bottom:10px;">正在恢復會議</h2>
+                <p style="color:var(--text-light); margin-bottom:30px;">PIN: ${storedHostPin}</p>
+                <p style="font-size:0.9rem; color:#999;">連線中...</p>
+                <button onclick="clearHostData()" class="btn" style="background:transparent; border:1px solid #ccc; color:#666; margin-top:20px;">取消並建立新會議</button>
+            </div>
+        `;
+        // 嘗試恢復
+        socket.emit('host-resume', storedHostPin);
+    }
+
+    // 輔助：清除舊資料 (給取消按鈕用)
+    window.clearHostData = function() {
+        localStorage.removeItem('vote_host_pin');
+        localStorage.removeItem('vote_host_name');
+        location.reload();
+    }
+
     createBtn.addEventListener('click', () => {
         const name = nameInput.value.trim();
         if (!name) return showToast('請輸入會議名稱');
@@ -139,7 +163,30 @@ if (isHostPage) {
         getEl('host-name-display').textContent = data.hostName;
         currentPin = data.pin;
         currentUsername = data.hostName;
+        // [新增] 儲存 Host 狀態
+        localStorage.setItem('vote_host_pin', data.pin);
+        localStorage.setItem('vote_host_name', data.hostName);
         showToast('會議室建立成功');
+    });
+
+    // [新增] 恢復成功
+    socket.on('host-resume-success', (data) => {
+        authOverlay.style.opacity = '0';
+        setTimeout(() => authOverlay.remove(), 500);
+        getEl('host-pin-display').textContent = data.pin;
+        getEl('host-name-display').textContent = data.hostName;
+        currentPin = data.pin;
+        currentUsername = data.hostName;
+        if(data.history) renderHistory(data.history);
+        showToast('歡迎回來，會議連線已恢復');
+    });
+
+    // [新增] 恢復失敗 (會議已結束或不存在)
+    socket.on('host-resume-fail', () => {
+        localStorage.removeItem('vote_host_pin');
+        localStorage.removeItem('vote_host_name');
+        // 重新整理頁面以顯示建立表單
+        location.reload();
     });
 
     const settingsModal = getEl('settings-modal');
@@ -163,6 +210,7 @@ if (isHostPage) {
 
     socket.on('host-name-updated', (n) => {
         getEl('host-name-display').textContent = n;
+        localStorage.setItem('vote_host_name', n);
         showToast('名稱更新');
     });
 
@@ -191,6 +239,9 @@ if (isHostPage) {
         if(confirm('確定要結束會議？這將強制所有人退出。')) {
             socket.emit('request-export');
             socket.emit('terminate-meeting');
+            // [新增] 結束後清除 Host 紀錄
+            localStorage.removeItem('vote_host_pin');
+            localStorage.removeItem('vote_host_name');
         }
     });
     
@@ -205,6 +256,8 @@ if (isHostPage) {
 
     socket.on('force-terminated', (reason) => {
         alert(`會議已被強制關閉：${reason}`);
+        localStorage.removeItem('vote_host_pin');
+        localStorage.removeItem('vote_host_name');
         location.href = 'index.html';
     });
 }
@@ -310,14 +363,12 @@ window.applyPreset = function(index) {
     showToast(`套用：${p.name}`);
 };
 
-// [修復] 監聽歷史紀錄更新
 socket.on('history-update', (history) => {
     if (isHostPage) {
         renderHistory(history);
     }
 });
 
-// [修復] 渲染歷史紀錄函式
 function renderHistory(history) {
     const container = getEl('history-container');
     if (!container) return;
@@ -326,7 +377,6 @@ function renderHistory(history) {
         return;
     }
     let html = '';
-    // 顯示最新的在上面
     [...history].reverse().forEach(record => {
         const timeStr = new Date(record.timestamp).toLocaleTimeString();
         let optionsSummary = '';
@@ -398,13 +448,11 @@ socket.on('state-update', (state) => {
     const timer = getEl('timer');
     if(timer) timer.textContent = state.timeLeft + 's';
 
-    // 彩帶邏輯：從 voting 轉 ended 才發射
     if(lastStatus === 'voting' && state.status === 'ended') {
          if(typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
     }
     lastStatus = state.status;
 
-    // 判斷顯示等待畫面
     const showWait = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult);
 
     if (showWait) {
