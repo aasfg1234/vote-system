@@ -22,7 +22,6 @@ let currentPresets = [];
 let hasConfirmedResult = false;
 let lastServerState = null;
 
-// 字體大小設定
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
 
@@ -31,7 +30,6 @@ const isParticipantPage = document.body.id === 'participant-page';
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// 金句庫
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
     "「選擇本身就是一種放棄，但也是一種獲得。」",
@@ -42,8 +40,7 @@ const quotes = [
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
-// --- 3. DOM 元素獲取 (使用安全檢查) ---
-// 為了避免報錯，我們在後面使用時都會檢查元素是否存在
+// --- 3. DOM 元素獲取 ---
 const getEl = (id) => document.getElementById(id);
 
 const loginScreen = getEl('login-screen');
@@ -64,12 +61,11 @@ const presetButtonsContainer = getEl('preset-buttons');
 const fontUpBtn = getEl('font-up'); 
 const fontDownBtn = getEl('font-down'); 
 
-// 主持人專用
 const monitorCountEl = getEl('monitor-count');
 const monitorTotalEl = getEl('monitor-total');
 const monitorOptionsEl = getEl('monitor-options');
 
-// --- 4. 關鍵功能：套用樣板 (移至全域，確保可用) ---
+// --- 4. 關鍵功能 ---
 window.applyPreset = function(index) {
     if (!currentPresets || !currentPresets[index]) return;
     const preset = currentPresets[index];
@@ -87,9 +83,7 @@ window.applyPreset = function(index) {
     showToast('已套用：' + preset.name);
 };
 
-// --- 5. 事件監聽綁定 ---
-
-// 字體調整
+// --- 5. 事件監聽 ---
 if(fontUpBtn) fontUpBtn.addEventListener('click', () => adjustFont(0.1));
 if(fontDownBtn) fontDownBtn.addEventListener('click', () => adjustFont(-0.1));
 
@@ -102,7 +96,6 @@ function adjustFont(delta) {
     showToast(`字體大小: ${Math.round(currentFontSize * 100)}%`);
 }
 
-// 自動登入 (僅限與會者)
 if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
@@ -155,11 +148,11 @@ socket.on('connect', () => {
     }
 });
 
-// --- 6. 狀態渲染 ---
+// --- 6. 狀態渲染 (修改：移除 history 的處理) ---
 socket.on('state-update', (state) => {
     if (isHostPage) {
         renderHostMonitor(state); 
-        if (state.history) renderHistory(state.history);
+        // if (state.history) renderHistory(state.history); <-- 移除了這行，因為封包裡沒有 history 了
         if (state.presets) renderPresets(state.presets);
         return; 
     }
@@ -168,7 +161,14 @@ socket.on('state-update', (state) => {
     renderMeeting(state);
 });
 
-// --- 主持人監控 ---
+// --- ✨ 新增：專門接收歷史紀錄的事件 ---
+socket.on('history-update', (history) => {
+    if (isHostPage) {
+        renderHistory(history);
+    }
+});
+// ------------------------------------
+
 function renderHostMonitor(state) {
     if (!monitorOptionsEl) return;
     if (monitorCountEl) monitorCountEl.textContent = state.joinedCount;
@@ -453,14 +453,12 @@ window.logout = function() {
     location.href = 'index.html';
 }
 
-// --- 7. 主持人頁面專用邏輯 ---
 if (isHostPage) {
     const authOverlay = getEl('host-auth-overlay');
     const pwdInput = getEl('host-password-input');
     const loginBtn = getEl('host-login-submit');
     const errorMsg = getEl('login-error-msg');
     
-    // 設定視窗
     const settingsModal = getEl('settings-modal');
     const openSettingsBtn = getEl('open-settings-btn');
     const closeSettingsBtn = getEl('close-settings-btn');
