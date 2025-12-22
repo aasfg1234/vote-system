@@ -227,7 +227,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
 /* --- 版面配置 (電腦版：左手機、右控制) --- */
 .host-grid { 
     display: grid; 
-    grid-template-columns: 500px 1fr; /* 左側固定給手機，右側自動填滿 */
+    grid-template-columns: 500px 1fr; /* 左側固定給手機 (500px)，右側自動填滿 */
     gap: 40px; 
     width: 100%; 
     max-width: 98vw; 
@@ -244,7 +244,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
     display: flex;
     justify-content: center;
     align-items: center;
-    order: -1; /* 讓它在視覺上排在第一位 (左邊/上面) */
+    order: -1; /* 關鍵：讓它在視覺上排在第一位 (左邊/上面) */
 }
 
 /* --- 手機外框 (iPhone Pro Max 尺寸) --- */
@@ -288,7 +288,7 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
     display: block;
 }
 
-/* 針對筆電螢幕高度不足時的自動縮放 */
+/* 針對筆電螢幕高度不足時的自動縮放，避免手機框被切掉 */
 @media (max-height: 900px) {
     .phone-mockup {
         transform: scale(0.85); 
@@ -297,27 +297,34 @@ input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-a
     }
 }
 
-/* --- RWD 手機版設定 (手機預覽置頂、控制台在下) --- */
+/* --- RWD 手機版設定 (手機預覽置頂、滿版寬度、控制台在下) --- */
 @media (max-width: 1100px) { 
     .host-grid { 
-        display: flex; /* 改用 Flex 以確保直向排列順序 */
+        display: flex; 
         flex-direction: column;
-        height: auto; 
+        height: auto;
+        padding: 0 10px; /* 兩側留一點點空隙，或設為 0 變成全滿 */
+        max-width: 100%;
     } 
     
     .phone-mockup { 
-        margin: 20px auto;
-        transform: scale(0.9); /* 手機版稍微縮小 */
+        width: 100%; /* 寬度佔滿 */
+        max-width: 100%;
+        height: auto; /* 高度自動 */
+        aspect-ratio: 412 / 860; /* 保持比例 */
+        transform: none; /* 移除縮放 */
+        margin: 0 auto 20px auto;
+        border-radius: 40px; /* 手機版圓角稍微小一點比較協調 */
     }
 
     /* 預覽畫面區塊 */
     .preview-container {
-        /* order: -1 繼承自全域，所以它會自動排在最上方 (Top) */
+        /* order: -1 繼承自全域，排在最上方 (Top) */
+        width: 100%;
         padding: 0;
-        margin-bottom: 30px; 
+        margin: 0 0 30px 0;
         border-bottom: 1px dashed var(--border); 
         padding-bottom: 30px;
-        margin-top: 0; 
         border-top: none;
     }
     
