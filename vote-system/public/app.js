@@ -70,7 +70,7 @@ if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
     
-    // [修正] 判斷是否為預覽模式
+    // 判斷是否為預覽模式
     const isPreview = urlParams.get('preview') === 'true';
 
     // 只有在「不是預覽模式」且「有儲存資料」時才自動登入
@@ -89,9 +89,6 @@ if (isParticipantPage) {
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
             
-            // 如果是在預覽模式下登入，我們依然允許寫入 localStorage
-            // 這樣可以模擬真實使用者的行為，但下次重整 iframe 時因為有 preview 參數，
-            // 依然會停在登入頁 (符合主持人想看登入頁的需求)，除非手動再按一次進入。
             localStorage.setItem('vote_pin', pin);
             localStorage.setItem('vote_username', username);
             currentPin = pin;
@@ -102,9 +99,7 @@ if (isParticipantPage) {
 
     getEl('leave-btn')?.addEventListener('click', () => {
         if (confirm('確定要離開會議嗎？')) {
-            localStorage.removeItem('vote_pin');
-            localStorage.removeItem('vote_username');
-            location.href = 'index.html';
+            logout();
         }
     });
 
@@ -114,21 +109,18 @@ if (isParticipantPage) {
             voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
-            // 如果是預覽模式，登入失敗不要跳轉，停留在原地即可
             if (!isPreview) {
                 localStorage.removeItem('vote_pin');
                 setTimeout(() => location.href = 'index.html', 1500);
             } else {
-                // 預覽模式下清空欄位讓主持人重試
                 getEl('pin-input').value = '';
             }
         }
     });
 
+    // [修正] 強制關閉時，直接顯示結束畫面，不跳 alert
     socket.on('force-terminated', (reason) => {
-        alert(`會議已結束：${reason}`);
-        localStorage.removeItem('vote_pin');
-        location.href = 'index.html';
+        renderTerminatedScreen(reason);
     });
 }
 
@@ -140,7 +132,6 @@ if (isHostPage) {
     const createBtn = getEl('create-meeting-btn');
     const nameInput = getEl('host-name-input');
     
-    // 檢查是否有之前的會議記錄
     const storedHostPin = localStorage.getItem('vote_host_pin');
     if (storedHostPin) {
         getEl('host-auth-overlay').innerHTML = `
@@ -260,6 +251,7 @@ if (isHostPage) {
         link.click();
     });
 
+    // 主持人被強制關閉時也跳轉
     socket.on('force-terminated', (reason) => {
         alert(`會議已被強制關閉：${reason}`);
         localStorage.removeItem('vote_host_pin');
@@ -402,9 +394,35 @@ function renderHistory(history) {
     container.innerHTML = html;
 }
 
+// [新增] 渲染結束畫面函式 (共用)
+function renderTerminatedScreen(reason) {
+    const optionsContainer = getEl('options-container');
+    if (optionsContainer) {
+        optionsContainer.className = '';
+        const reasonHtml = reason ? `<p style="font-size:0.9rem; color:var(--danger); margin-top:10px;">(${reason})</p>` : '';
+        optionsContainer.innerHTML = `
+            <div style="text-align:center; padding:50px 20px;">
+                <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
+                <h2 style="color:var(--text-main); margin-bottom:10px;">會議已結束</h2>
+                <p style="color:var(--text-light);">感謝您的參與</p>
+                ${reasonHtml}
+                ${isHostPage ? `
+                    <p style="font-size:0.9rem; margin-top:20px; color:var(--success);">✓ 報表已自動下載</p>
+                    <button onclick="logout()" class="btn" style="margin-top:20px; background:var(--text-main);">🏠 回首頁</button>
+                ` : ''}
+                ${isParticipantPage ? '<button onclick="logout()" class="btn" style="margin-top:30px;">🏠 回首頁</button>' : ''}
+            </div>
+        `;
+    }
+    const qEl = getEl('question-text'); if(qEl) qEl.textContent = '';
+    const stEl = getEl('status-text'); if(stEl) stEl.textContent = '已結束';
+    const lBtn = getEl('leave-btn'); if(lBtn) lBtn.style.display = 'none';
+}
+
 socket.on('state-update', (state) => {
     // 1. 主持人頁面更新
     if (isHostPage) {
+        // ... (主持人即時監控邏輯保持不變)
         getEl('monitor-count').textContent = state.joinedCount;
         getEl('monitor-total').textContent = state.totalVotes;
         if (state.presets) {
@@ -439,6 +457,12 @@ socket.on('state-update', (state) => {
     // 2. 與會者頁面更新
     if (!getEl('vote-screen')) return;
     
+    // [修正] 如果收到 terminated 狀態，直接顯示結束畫面
+    if (state.status === 'terminated') {
+        renderTerminatedScreen();
+        return;
+    }
+
     currentSettings = state.settings;
     if (state.voteId !== currentVoteId) {
         myVotes = [];
@@ -552,7 +576,6 @@ window.handleVote = function(id) {
 }
 
 window.confirmResult = function() {
-    console.log("Button Clicked"); 
     hasConfirmedResult = true;
     if (lastServerState) {
         const listeners = socket.listeners('state-update');
@@ -562,4 +585,11 @@ window.confirmResult = function() {
             location.reload();
         }
     }
+}
+
+// 統一登出函式
+window.logout = function() {
+    localStorage.removeItem('vote_pin');
+    localStorage.removeItem('vote_username');
+    location.href = 'index.html';
 }
