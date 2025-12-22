@@ -15,12 +15,13 @@
     
     <div id="host-auth-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-paper); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center;">
         <div class="container" style="max-width:400px; text-align:center; padding:50px;">
-            <div style="font-size:3rem; margin-bottom:20px;">🔒</div>
-            <h2 style="margin-bottom:10px;">主持人驗證</h2>
-            <p style="color:var(--text-light); margin-bottom:30px; font-family:'Noto Serif TC'">請輸入管理密碼以解鎖控制台</p>
-            <input type="password" id="host-password-input" placeholder="Password" style="text-align:center; letter-spacing:3px; font-size:1.2rem; margin-bottom:20px;">
-            <button id="host-login-submit" class="btn">解鎖登入</button>
-            <p id="login-error-msg" style="color:var(--danger); margin-top:15px; opacity:0; transition:opacity 0.3s;">密碼錯誤</p>
+            <div style="font-size:3rem; margin-bottom:20px;">🆕</div>
+            <h2 style="margin-bottom:10px;">建立新會議</h2>
+            <p style="color:var(--text-light); margin-bottom:30px; font-family:'Noto Serif TC'">請輸入會議名稱以開始</p>
+            
+            <input type="text" id="host-name-input" placeholder="例如：週五例會" style="text-align:center; font-size:1.2rem; margin-bottom:20px;">
+            
+            <button id="create-meeting-btn" class="btn">立即建立</button>
             <a href="index.html" style="display:block; margin-top:30px; color:var(--text-light); text-decoration:none; font-size:0.9rem;">← 返回首頁</a>
         </div>
     </div>
@@ -29,32 +30,31 @@
         <div class="container" style="max-width:500px; padding:30px; position:relative; max-height: 90vh; overflow-y: auto;">
             <button id="close-settings-btn" style="position:absolute; top:15px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer;">×</button>
             <h2 style="margin-bottom:20px; text-align:center;">⚙️ 系統設定</h2>
+            
             <div style="border-bottom:1px dashed var(--border); padding-bottom:20px; margin-bottom:20px;">
-                <h3 style="font-size:1.1rem; margin-bottom:10px;">👤 修改主持人暱稱</h3>
-                <input type="text" id="new-host-name" placeholder="預設: HOST" style="margin-bottom:10px;">
-                <button id="save-host-name-btn" class="btn" style="background:var(--primary); color:white;">儲存暱稱</button>
+                <h3 style="font-size:1.1rem; margin-bottom:10px;">👤 修改顯示名稱</h3>
+                <input type="text" id="new-host-name" placeholder="新的名稱" style="margin-bottom:10px;">
+                <button id="save-host-name-btn" class="btn" style="background:var(--primary); color:white;">儲存</button>
             </div>
-            <div style="border-bottom:1px dashed var(--border); padding-bottom:20px; margin-bottom:20px;">
-                <h3 style="font-size:1.1rem; margin-bottom:10px;">🔑 修改主持人密碼</h3>
-                <input type="text" id="new-host-password" placeholder="輸入新密碼" style="margin-bottom:10px;">
-                <button id="save-password-btn" class="btn" style="background:var(--text-main); color:white;">儲存新密碼</button>
-            </div>
+            
             <div>
                 <h3 style="font-size:1.1rem; margin-bottom:10px;">➕ 新增快速樣板</h3>
-                <input type="text" id="new-preset-name" placeholder="樣板名稱 (如: 👔 穿搭題)" style="margin-bottom:8px;">
+                <input type="text" id="new-preset-name" placeholder="樣板名稱" style="margin-bottom:8px;">
                 <input type="text" id="new-preset-question" placeholder="預設題目" style="margin-bottom:8px;">
-                <input type="text" id="new-preset-options" placeholder="選項 (用逗號分隔，如: 紅,藍,綠)" style="margin-bottom:10px;">
+                <input type="text" id="new-preset-options" placeholder="選項 (用逗號分隔)" style="margin-bottom:10px;">
                 <button id="add-preset-btn" class="btn" style="background:var(--success);">新增樣板</button>
             </div>
         </div>
     </div>
 
     <div class="host-grid">
-        
         <div class="container" style="display:flex; flex-direction:column; height: 100%; overflow-y: auto;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2 style="margin:0;">🎛 控制面板</h2>
-                <button id="open-settings-btn" style="background:none; border:none; font-size:1.5rem; cursor:pointer;" title="設定">⚙️</button>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span id="host-name-display" style="font-size:0.9rem; color:var(--text-light);"></span>
+                    <button id="open-settings-btn" style="background:none; border:none; font-size:1.5rem; cursor:pointer;" title="設定">⚙️</button>
+                </div>
             </div>
             
             <div class="pin-badge" style="background: var(--text-main); color: #fff; padding: 4px 12px; font-family: 'Noto Serif TC'; border-radius: 50px; display: inline-block; margin-bottom: 20px;">
@@ -133,13 +133,10 @@
                     <iframe src="participant.html?clean=true" style="width:100%; height:100%; border:none;"></iframe>
                 </div>
             </div>
-            </div>
+        </div>
     </div>
 
     <div id="toast"></div>
-    <input type="hidden" id="pin-input"> 
-    <button id="join-btn" class="hidden"></button>
-
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
 </body>
