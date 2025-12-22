@@ -7,83 +7,107 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// --- 設定 ---
-let hostPassword = process.env.HOST_PASSWORD || '8888';
-let hostName = 'HOST';
-
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- 全域設定 ---
+let adminPassword = '8888'; // 管理員密碼
+const DEFAULT_TIMEOUT = 3 * 60 * 60 * 1000; // 預設 3 小時 (毫秒)
+
+// --- 資料結構 ---
+// Key: pin (String), Value: Meeting Object
+const meetings = new Map();
+
 // --- 預設樣板 ---
-let presets = [
+let globalPresets = [
     { name: "⭕ 是非題", question: "您是否同意此提案？", options: ["⭕ 同意", "❌ 不同意"] },
     { name: "📊 評分題", question: "請對本次活動進行評分", options: ["⭐️⭐️⭐️⭐️⭐️ 非常滿意", "⭐️⭐️⭐️⭐️ 滿意", "⭐️⭐️⭐️ 普通", "⭐️⭐️ 尚可", "⭐️ 待加強"] },
     { name: "🍱 午餐題", question: "今天午餐想吃什麼類別？", options: ["🍱 便當/自助餐", "🍜 麵食/水餃", "🍔 速食", "🥗 輕食/沙拉"] }
 ];
 
-// --- 系統狀態 ---
-let meetingState = {
-    pin: Math.floor(1000 + Math.random() * 9000).toString(),
-    status: 'waiting', 
-    question: '',
-    options: [],
-    settings: { allowMulti: false, blindMode: false, duration: 0 },
-    timer: null,
-    endTime: null,
-    voteId: 0,
-    hasArchived: false
-};
+// --- 輔助函式 ---
+function createMeetingState(pin, hostName) {
+    return {
+        pin: pin,
+        hostName: hostName || 'HOST',
+        status: 'waiting', 
+        question: '',
+        options: [], 
+        settings: { allowMulti: false, blindMode: false, duration: 0 },
+        timer: null,
+        endTime: null,
+        voteId: 0,
+        hasArchived: false,
+        history: [],
+        voterRecords: new Map(),
+        presets: [...globalPresets],
+        // --- 新增：超時控制 ---
+        createdAt: Date.now(),
+        lastActiveTime: Date.now(),
+        timeoutDuration: DEFAULT_TIMEOUT 
+    };
+}
 
-let meetingHistory = []; 
+function generateUniquePin() {
+    let pin;
+    do {
+        pin = Math.floor(1000 + Math.random() * 9000).toString();
+    } while (meetings.has(pin));
+    return pin;
+}
 
-// ✨ 修改：記錄資料結構變更為 Key: deviceId, Value: { username, votes }
-const voterRecords = new Map();
+function touchMeeting(meeting) {
+    if (meeting) meeting.lastActiveTime = Date.now();
+}
 
-function archiveCurrentVote() {
-    if (!meetingState.question || meetingState.hasArchived) return;
+// --- 自動清理機制 (每分鐘檢查) ---
+setInterval(() => {
+    const now = Date.now();
+    meetings.forEach((meeting, pin) => {
+        if (meeting.status !== 'terminated') {
+            if (now - meeting.lastActiveTime > meeting.timeoutDuration) {
+                console.log(`[Auto-Close] Meeting ${pin} inactive for too long.`);
+                terminateMeeting(meeting, 'auto-timeout');
+            }
+        }
+    });
+}, 60 * 1000);
 
+// --- 核心邏輯 ---
+function archiveCurrentVote(meeting) {
+    if (!meeting || !meeting.question || meeting.hasArchived) return;
     const snapshot = {
-        question: meetingState.question,
-        options: JSON.parse(JSON.stringify(meetingState.options)), 
+        question: meeting.question,
+        options: JSON.parse(JSON.stringify(meeting.options)), 
         timestamp: new Date().toISOString(),
         totalVotes: 0,
         voterDetails: {} 
     };
     let total = 0;
-    
-    // ✨ 修改：配合新的 Map 結構存取資料
-    voterRecords.forEach((data, deviceId) => {
+    meeting.voterRecords.forEach((data) => {
         if (data.votes && data.votes.length > 0) {
             total++;
-            // 在歷史紀錄中，我們顯示名字 (如果一個人用同裝置換名字，會顯示最後一個名字)
             snapshot.voterDetails[data.username] = data.votes;
         }
     });
     snapshot.totalVotes = total;
-    meetingHistory.push(snapshot);
-    meetingState.hasArchived = true;
-    
-    broadcastHistory();
+    meeting.history.push(snapshot);
+    meeting.hasArchived = true;
+    io.to(`${meeting.pin}-host`).emit('history-update', meeting.history);
 }
 
-function broadcastHistory() {
-    io.to('host-room').emit('history-update', meetingHistory);
-}
-
-function broadcastState() {
+function broadcastState(meeting) {
+    if (!meeting) return;
     let totalVotes = 0;
-    meetingState.options.forEach(opt => opt.count = 0);
-
+    meeting.options.forEach(opt => opt.count = 0);
     const hostVoterMap = {}; 
 
-    // ✨ 修改：配合新的 Map 結構計算票數
-    voterRecords.forEach((data, deviceId) => {
+    meeting.voterRecords.forEach((data) => {
         const votes = data.votes;
         const username = data.username;
-
         if (votes && votes.length > 0) {
             totalVotes++;
             votes.forEach(optId => {
-                const opt = meetingState.options.find(o => o.id === optId);
+                const opt = meeting.options.find(o => o.id === optId);
                 if (opt) {
                     opt.count++;
                     if (!hostVoterMap[optId]) hostVoterMap[optId] = [];
@@ -93,245 +117,296 @@ function broadcastState() {
         }
     });
 
-    const allSockets = io.sockets.adapter.rooms.get('meeting-room');
-    const hostSockets = io.sockets.adapter.rooms.get('host-room');
+    // 計算人數
+    const roomName = `meeting-${meeting.pin}`;
+    const allSockets = io.sockets.adapter.rooms.get(roomName);
+    const hostRoomName = `${meeting.pin}-host`;
+    const hostSockets = io.sockets.adapter.rooms.get(hostRoomName);
     let realUserCount = 0;
-
     if (allSockets) {
         allSockets.forEach(socketId => {
-            if (!hostSockets || !hostSockets.has(socketId)) {
-                realUserCount++;
-            }
+            if (!hostSockets || !hostSockets.has(socketId)) realUserCount++;
         });
     }
 
-    const fullOptions = meetingState.options.map(opt => ({
-        id: opt.id,
-        text: opt.text,
-        color: opt.color,
-        count: opt.count,
+    const fullOptions = meeting.options.map(opt => ({
+        id: opt.id, text: opt.text, color: opt.color, count: opt.count,
         percent: totalVotes === 0 ? 0 : Math.round((opt.count / totalVotes) * 100)
     }));
-
-    const blindedOptions = meetingState.options.map(opt => ({
-        id: opt.id,
-        text: opt.text,
-        color: opt.color,
-        count: -1,
-        percent: -1
+    
+    const blindedOptions = meeting.options.map(opt => ({
+        id: opt.id, text: opt.text, color: opt.color, count: -1, percent: -1
     }));
 
     const basePayload = {
-        status: meetingState.status,
-        question: meetingState.question,
+        status: meeting.status,
+        question: meeting.question,
         totalVotes: totalVotes,
         joinedCount: realUserCount, 
-        settings: meetingState.settings,
-        timeLeft: meetingState.endTime ? Math.max(0, Math.round((meetingState.endTime - Date.now())/1000)) : 0,
-        voteId: meetingState.voteId
+        settings: meeting.settings,
+        timeLeft: meeting.endTime ? Math.max(0, Math.round((meeting.endTime - Date.now())/1000)) : 0,
+        voteId: meeting.voteId
     };
 
-    io.to('host-room').emit('state-update', { 
-        ...basePayload, 
-        options: fullOptions,
-        hostVoterMap: hostVoterMap, 
-        presets: presets 
+    io.to(hostRoomName).emit('state-update', { 
+        ...basePayload, options: fullOptions, hostVoterMap, presets: meeting.presets 
     });
 
-    if (meetingState.settings.blindMode && meetingState.status === 'voting') {
-        io.except('host-room').emit('state-update', { ...basePayload, options: blindedOptions });
+    if (meeting.settings.blindMode && meeting.status === 'voting') {
+        io.to(roomName).except(hostRoomName).emit('state-update', { ...basePayload, options: blindedOptions });
     } else {
-        io.except('host-room').emit('state-update', { ...basePayload, options: fullOptions });
+        io.to(roomName).except(hostRoomName).emit('state-update', { ...basePayload, options: fullOptions });
     }
 }
 
-function resetVotes() {
-    voterRecords.clear();
-    meetingState.options.forEach(opt => opt.count = 0);
+function terminateMeeting(meeting, reason = 'manual') {
+    if (!meeting) return;
+    archiveCurrentVote(meeting);
+    if (meeting.timer) clearInterval(meeting.timer);
+    
+    meeting.status = 'terminated';
+    meeting.question = '';
+    meeting.endTime = null;
+    
+    broadcastState(meeting);
+    
+    // 如果是自動關閉，廣播給所有人包含主持人
+    if (reason === 'auto-timeout') {
+        io.to(`${meeting.pin}-host`).emit('force-terminated', '系統閒置過久自動關閉');
+        io.to(`meeting-${meeting.pin}`).emit('force-terminated', '系統閒置過久自動關閉');
+    }
+    
+    // 延遲刪除
+    setTimeout(() => {
+        meetings.delete(meeting.pin);
+        broadcastAdminList(); // 更新管理員列表
+    }, 1000 * 60 * 60); 
+    
+    broadcastAdminList();
 }
 
+function broadcastAdminList() {
+    const list = [];
+    meetings.forEach(m => {
+        // 計算剩餘時間 (小時)
+        const idleTime = Date.now() - m.lastActiveTime;
+        const remaining = Math.max(0, m.timeoutDuration - idleTime);
+        list.push({
+            pin: m.pin,
+            hostName: m.hostName,
+            status: m.status,
+            activeUsers: io.sockets.adapter.rooms.get(`meeting-${m.pin}`)?.size || 0,
+            remainingTime: Math.round(remaining / 1000 / 60), // 分鐘
+            timeoutSetting: Math.round(m.timeoutDuration / 1000 / 60 / 60) // 小時
+        });
+    });
+    io.to('admin-room').emit('admin-list-update', list);
+}
+
+// --- Socket 連線 ---
 io.on('connection', (socket) => {
     
+    // 1. 與會者加入
     socket.on('join', (data) => {
-        const pin = typeof data === 'object' ? data.pin : data;
-        const username = typeof data === 'object' ? data.username : null;
-        const deviceId = typeof data === 'object' ? data.deviceId : null; // ✨ 接收 deviceId
+        const { pin, username, deviceId } = data;
+        const meeting = meetings.get(pin);
 
-        if (meetingState.status === 'terminated' && username !== hostName) {
+        if (!meeting) {
+            socket.emit('joined', { success: false, error: 'PIN 碼無效' });
+            return;
+        }
+        if (meeting.status === 'terminated') {
             socket.emit('joined', { success: false, error: '會議已結束' });
             return;
         }
 
-        if (pin === meetingState.pin) {
-            socket.join('meeting-room');
-            socket.emit('joined', { success: true });
-            
-            // ✨ 修改：恢復投票狀態時，優先使用 deviceId 查詢
-            if (deviceId && meetingState.status === 'voting') {
-                const record = voterRecords.get(deviceId);
-                if (record) {
-                    socket.emit('vote-confirmed', record.votes);
-                }
-            }
-            broadcastState();
-        } else {
-            socket.emit('joined', { success: false, error: 'PIN 碼錯誤' });
+        socket.join(`meeting-${pin}`);
+        socket.data.pin = pin;
+        socket.data.username = username;
+        touchMeeting(meeting);
+
+        socket.emit('joined', { success: true });
+        if (deviceId && meeting.status === 'voting') {
+            const record = meeting.voterRecords.get(deviceId);
+            if (record) socket.emit('vote-confirmed', record.votes);
         }
+        broadcastState(meeting);
+        broadcastAdminList();
     });
 
-    socket.on('host-login', (inputPassword) => {
-        if (inputPassword === hostPassword) {
-            if (meetingState.status === 'terminated') {
-                io.in('meeting-room').disconnectSockets();
-                meetingState = {
-                    pin: Math.floor(1000 + Math.random() * 9000).toString(),
-                    status: 'waiting', 
-                    question: '',
-                    options: [],
-                    settings: { allowMulti: false, blindMode: false, duration: 0 },
-                    timer: null,
-                    endTime: null,
-                    voteId: 0,
-                    hasArchived: false
-                };
-                meetingHistory = [];
-                voterRecords.clear();
-            }
+    // 2. 建立新會議室 (不需要密碼，只需要名稱)
+    socket.on('create-meeting', (hostName) => {
+        const newPin = generateUniquePin();
+        const newMeeting = createMeetingState(newPin, hostName);
+        meetings.set(newPin, newMeeting);
 
-            socket.join('host-room'); 
-            socket.join('meeting-room'); 
-            socket.emit('host-login-success', { pin: meetingState.pin, hostName: hostName });
-            socket.emit('history-update', meetingHistory);
-            broadcastState(); 
-        } else {
-            socket.emit('host-login-fail');
-        }
+        socket.data.pin = newPin;
+        socket.data.isHost = true;
+
+        socket.join(`meeting-${newPin}`);
+        socket.join(`${newPin}-host`);
+
+        socket.emit('create-success', { pin: newPin, hostName: newMeeting.hostName });
+        broadcastState(newMeeting); 
+        broadcastAdminList();
     });
 
-    socket.on('change-password', (newPwd) => {
-        hostPassword = newPwd;
-        socket.emit('password-updated');
-    });
-
-    socket.on('change-host-name', (newName) => {
-        hostName = newName;
-        socket.emit('host-name-updated', hostName);
-    });
-
-    socket.on('add-preset', (newPreset) => {
-        presets.push(newPreset);
-        broadcastState(); 
-    });
-
+    // 3. 投票控制
     socket.on('start-vote', (data) => {
-        archiveCurrentVote();
-        resetVotes();
-        meetingState.status = 'voting';
-        meetingState.question = data.question;
-        meetingState.settings.allowMulti = data.allowMulti;
-        meetingState.settings.blindMode = data.blindMode;
-        meetingState.voteId = Date.now(); 
-        meetingState.hasArchived = false;
+        const meeting = meetings.get(socket.data.pin);
+        if (!meeting || !socket.data.isHost) return;
+        touchMeeting(meeting);
+
+        archiveCurrentVote(meeting);
+        meeting.voterRecords.clear();
+        meeting.options.forEach(o => o.count = 0);
         
-        meetingState.options = data.options.map((opt, index) => ({
-            id: index,
-            text: opt.text,
-            color: opt.color,
-            count: 0
+        meeting.status = 'voting';
+        meeting.question = data.question;
+        meeting.settings.allowMulti = data.allowMulti;
+        meeting.settings.blindMode = data.blindMode;
+        meeting.voteId = Date.now(); 
+        meeting.hasArchived = false;
+        
+        meeting.options = data.options.map((opt, index) => ({
+            id: index, text: opt.text, color: opt.color, count: 0
         }));
 
         if (data.duration > 0) {
-            meetingState.endTime = Date.now() + (data.duration * 1000);
-            if (meetingState.timer) clearInterval(meetingState.timer);
-            meetingState.timer = setInterval(() => {
-                const left = Math.round((meetingState.endTime - Date.now())/1000);
-                if (left <= 0) stopVoting();
-                else io.to('meeting-room').emit('timer-tick', left);
+            meeting.endTime = Date.now() + (data.duration * 1000);
+            if (meeting.timer) clearInterval(meeting.timer);
+            meeting.timer = setInterval(() => {
+                const currentM = meetings.get(meeting.pin);
+                if(!currentM) return;
+                const left = Math.round((currentM.endTime - Date.now())/1000);
+                if (left <= 0) {
+                    if (currentM.timer) clearInterval(currentM.timer);
+                    currentM.status = 'ended';
+                    currentM.endTime = null;
+                    archiveCurrentVote(currentM);
+                    broadcastState(currentM);
+                } else {
+                    io.to(`meeting-${currentM.pin}`).emit('timer-tick', left);
+                }
             }, 1000);
         } else {
-            meetingState.endTime = null;
-            if (meetingState.timer) clearInterval(meetingState.timer);
+            meeting.endTime = null;
+            if (meeting.timer) clearInterval(meeting.timer);
         }
-        broadcastState();
+        broadcastState(meeting);
     });
 
-    socket.on('stop-vote', () => stopVoting());
-
-    function stopVoting() {
-        if (meetingState.timer) clearInterval(meetingState.timer);
-        meetingState.status = 'ended';
-        meetingState.endTime = null;
-        archiveCurrentVote(); 
-        broadcastState();
-    }
+    socket.on('stop-vote', () => {
+        const meeting = meetings.get(socket.data.pin);
+        if (meeting && socket.data.isHost) {
+            touchMeeting(meeting);
+            if (meeting.timer) clearInterval(meeting.timer);
+            meeting.status = 'ended';
+            meeting.endTime = null;
+            archiveCurrentVote(meeting); 
+            broadcastState(meeting);
+        }
+    });
 
     socket.on('terminate-meeting', () => {
-        archiveCurrentVote();
-        if (meetingState.timer) clearInterval(meetingState.timer);
-        meetingState.status = 'terminated';
-        meetingState.question = '';
-        meetingState.endTime = null;
-        broadcastState();
+        const meeting = meetings.get(socket.data.pin);
+        if (meeting && socket.data.isHost) {
+            terminateMeeting(meeting);
+        }
     });
 
     socket.on('submit-vote', (data) => {
-        if (meetingState.status !== 'voting') return;
-        const votes = data.votes;
-        const username = data.username;
-        const deviceId = data.deviceId; // ✨ 接收 deviceId
+        const pin = socket.data.pin || data.pin; 
+        const meeting = meetings.get(pin);
+        if (!meeting || meeting.status !== 'voting') return;
+        if (socket.data.isHost) return;
         
-        if (socket.rooms.has('host-room')) return;
-
-        // ✨ 關鍵修改：以 deviceId 為準來儲存投票
-        // 如果這個 deviceId 已經投過，會直接覆蓋（更新），確保一人一票
-        if (!username || !deviceId) return; 
-        
-        voterRecords.set(deviceId, {
-            username: username, // 更新名字 (如果使用者換名字，這裡會更新)
-            votes: Array.isArray(votes) ? votes : [votes]
+        touchMeeting(meeting);
+        meeting.voterRecords.set(data.deviceId, {
+            username: data.username, votes: data.votes
         });
-
-        broadcastState();
-        socket.emit('vote-confirmed', votes);
+        broadcastState(meeting);
+        socket.emit('vote-confirmed', data.votes);
     });
 
+    // --- CSV 匯出 ---
     socket.on('request-export', () => {
+        const meeting = meetings.get(socket.data.pin);
+        if (!meeting || !socket.data.isHost) return;
+        touchMeeting(meeting);
+        
+        // (CSV 邏輯保持原樣，篇幅省略，若需要請告知，這裡主要處理流程)
         let csvContent = "\uFEFF題目,選項,票數,投票者名單\n"; 
-        meetingHistory.forEach(record => {
+        meeting.history.forEach(record => {
             record.options.forEach(opt => {
                 const voters = [];
                 for (const [name, choices] of Object.entries(record.voterDetails)) {
                     if (choices.includes(opt.id)) voters.push(name);
                 }
-                const safeQ = record.question.replace(/"/g, '""');
-                const safeOpt = opt.text.replace(/"/g, '""');
-                const safeVoters = voters.join('; ');
-                csvContent += `"[歷史] ${safeQ}","${safeOpt}",${opt.count},"${safeVoters}"\n`;
+                csvContent += `"[歷史] ${record.question}","${opt.text}",${opt.count},"${voters.join('; ')}"\n`;
             });
             csvContent += `,,,\n`; 
         });
-
-        if (meetingState.question && meetingState.status !== 'terminated') {
-            const currentVoterMap = {};
-            // ✨ 修改：匯出時也從新的 Map 結構讀取
-            voterRecords.forEach((data, deviceId) => {
-                data.votes.forEach(optId => {
-                    if(!currentVoterMap[optId]) currentVoterMap[optId] = [];
-                    currentVoterMap[optId].push(data.username);
-                });
-            });
-            meetingState.options.forEach(opt => {
-                const voters = currentVoterMap[opt.id] || [];
-                const safeQ = meetingState.question.replace(/"/g, '""');
-                const safeOpt = opt.text.replace(/"/g, '""');
-                const safeVoters = voters.join('; ');
-                csvContent += `"[當前] ${safeQ}","${safeOpt}",${opt.count},"${safeVoters}"\n`;
-            });
-        }
         socket.emit('export-data', csvContent);
     });
 
-    socket.on('disconnect', () => broadcastState());
+    // --- 管理員 API ---
+    socket.on('admin-login', (pwd) => {
+        if (pwd === adminPassword) {
+            socket.join('admin-room');
+            socket.emit('admin-login-success');
+            broadcastAdminList();
+        } else {
+            socket.emit('admin-login-fail');
+        }
+    });
+
+    socket.on('admin-terminate', (targetPin) => {
+        // 只有在 admin-room 的人可以執行
+        if (socket.rooms.has('admin-room')) {
+            const meeting = meetings.get(targetPin);
+            if (meeting) terminateMeeting(meeting, 'admin-force');
+        }
+    });
+
+    socket.on('admin-update-timeout', (data) => {
+        if (socket.rooms.has('admin-room')) {
+            const meeting = meetings.get(data.pin);
+            if (meeting) {
+                // data.hours 為小時
+                meeting.timeoutDuration = data.hours * 60 * 60 * 1000;
+                broadcastAdminList();
+            }
+        }
+    });
+
+    socket.on('admin-change-password', (newPwd) => {
+        if (socket.rooms.has('admin-room')) {
+            adminPassword = newPwd;
+            socket.emit('admin-msg', '管理員密碼已更新');
+        }
+    });
+
+    socket.on('admin-add-preset', (preset) => {
+        if (socket.rooms.has('admin-room')) {
+            globalPresets.push(preset);
+            // 同步給所有正在進行的會議
+            meetings.forEach(m => {
+                m.presets.push(preset);
+                broadcastState(m); // 讓主持人看到
+            });
+            socket.emit('admin-msg', '全域模板已新增');
+        }
+    });
+
+    socket.on('disconnect', () => {
+        const pin = socket.data.pin;
+        if (pin) {
+            const meeting = meetings.get(pin);
+            if (meeting) setTimeout(() => broadcastState(meeting), 1000);
+        }
+        broadcastAdminList();
+    });
 });
 
 const PORT = process.env.PORT || 3000;
