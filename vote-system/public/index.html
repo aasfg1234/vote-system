@@ -6,7 +6,7 @@
     <title>會議投票系統</title>
     
     <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
-    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
 
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,10 +26,13 @@
         .role-desc { font-size: 0.9rem; color: var(--text-light); display: block; }
     </style>
     <script>
-        // 自動登入檢查：如果之前已經加入過會議，直接跳轉到與會者頁面
+        // [修正] 自動登入檢查：加入 skip 參數判斷
+        const urlParams = new URLSearchParams(window.location.search);
         const storedPin = localStorage.getItem('vote_pin');
         const storedName = localStorage.getItem('vote_username');
-        if (storedPin && storedName) {
+        
+        // 只有當網址沒有 ?skip=1 時，才執行自動跳轉
+        if (!urlParams.has('skip') && storedPin && storedName) {
             window.location.href = 'participant.html';
         }
     </script>
