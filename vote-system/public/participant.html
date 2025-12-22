@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body id="participant-page">
@@ -19,17 +19,20 @@
     <div class="container">
         
         <div id="login-screen">
-            <h1 style="text-align:center; margin-bottom:10px;">加入會議</h1>
-            <p style="text-align:center; margin-bottom:30px; color:var(--text-light); font-family:'Noto Serif TC'">Please enter details</p>
+            <h1 style="text-align:center; margin-bottom:15px;">加入會議</h1>
+            <p style="text-align:center; margin-bottom:40px; color:var(--text-light); font-family:'Noto Serif TC'">Please enter details</p>
             
-            <input type="text" id="username-input" placeholder="您的姓名 / 暱稱" style="margin-bottom:10px; text-align:center;">
+            <input type="text" id="username-input" placeholder="您的姓名 / 暱稱" style="margin-bottom:15px; text-align:center;">
             <input type="number" id="pin-input" placeholder="PIN 碼" maxlength="4">
+            
             <button id="join-btn" class="btn">進入投票室</button>
+            
+            <button onclick="location.href='index.html'" class="btn" style="background:transparent; border:1px solid var(--border); color:var(--text-light); margin-top:10px;">← 回首頁</button>
         </div>
 
         <div id="vote-screen" class="hidden">
             <div style="text-align: right; margin-bottom: 10px;">
-                <button id="leave-btn" style="background: transparent; border: 1px solid var(--border); color: var(--text-light); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">🏃 離開會議</button>
+                <button id="leave-btn" style="background: transparent; border: none; color: var(--text-light); padding: 5px 10px; cursor: pointer; font-size: 0.8rem;">🏃 離開會議</button>
             </div>
 
             <div class="status-bar">
