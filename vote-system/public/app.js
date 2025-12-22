@@ -25,7 +25,7 @@ const deviceId = getDeviceId();
 // 頁面判斷
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
-const isAdminPage = document.body.id === 'admin-page'; // 新增
+const isAdminPage = document.body.id === 'admin-page'; 
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
@@ -215,7 +215,7 @@ if (isHostPage) {
 }
 
 // ==========================
-// C. 管理員頁面邏輯 (Admin) - NEW
+// C. 管理員頁面邏輯 (Admin)
 // ==========================
 if (isAdminPage) {
     const authOverlay = getEl('admin-auth-overlay');
@@ -395,8 +395,6 @@ socket.on('state-update', (state) => {
     let max = Math.max(...state.options.map(o => o.count));
     const container = getEl('options-container');
     
-    // 檢查是否已渲染過，若結構相同則只更新數據 (簡單優化)
-    // 這裡為了保持代碼簡單，我們每次重繪，但在實際生產中可做 Diff
     container.innerHTML = state.options.map(opt => {
         const isBlind = opt.percent === -1;
         const percent = isBlind ? '?' : opt.percent;
@@ -425,7 +423,6 @@ socket.on('state-update', (state) => {
         </div>`;
     }
     
-    // 如果狀態是 ended，鎖定點擊
     if (state.status === 'ended') {
          container.querySelectorAll('.option-card').forEach(c => c.style.cursor = 'default');
     } else {
@@ -468,10 +465,10 @@ window.handleVote = function(id) {
     socket.emit('submit-vote', { pin: currentPin, username: currentUsername, deviceId, votes: myVotes });
 }
 
+// 修正：直接調用 renderMeeting 而不是透過 socket 觸發
 window.confirmResult = function() {
     hasConfirmedResult = true;
     if (lastServerState) {
-        // 觸發一次假更新來切換顯示
-        socket.listeners('state-update')[0](lastServerState);
+        renderMeeting(lastServerState);
     }
 }
