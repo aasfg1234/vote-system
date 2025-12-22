@@ -16,8 +16,8 @@ let currentVoteId = 0;
 let currentPin = '';
 let currentUsername = '';
 let currentPresets = []; 
-let hasConfirmedResult = false;
-let lastServerState = null;
+let hasConfirmedResult = false; // 是否已點擊收到
+let lastServerState = null;     // 暫存伺服器狀態
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
 const deviceId = getDeviceId();
@@ -111,7 +111,6 @@ if (isParticipantPage) {
         }
     });
 
-    // 接收強制關閉
     socket.on('force-terminated', (reason) => {
         alert(`會議已結束：${reason}`);
         localStorage.removeItem('vote_pin');
@@ -127,7 +126,6 @@ if (isHostPage) {
     const createBtn = getEl('create-meeting-btn');
     const nameInput = getEl('host-name-input');
     
-    // 建立會議
     createBtn.addEventListener('click', () => {
         const name = nameInput.value.trim();
         if (!name) return showToast('請輸入會議名稱');
@@ -144,7 +142,6 @@ if (isHostPage) {
         showToast('會議室建立成功');
     });
 
-    // 設定 Modal 相關
     const settingsModal = getEl('settings-modal');
     getEl('open-settings-btn')?.addEventListener('click', () => settingsModal.classList.remove('hidden'));
     getEl('close-settings-btn')?.addEventListener('click', () => settingsModal.classList.add('hidden'));
@@ -169,7 +166,6 @@ if (isHostPage) {
         showToast('名稱更新');
     });
 
-    // 投票控制
     getEl('start-vote-btn')?.addEventListener('click', () => {
         const question = getEl('h-question').value;
         const opts = Array.from(document.querySelectorAll('.opt-text')).map(i => i.value).filter(v => v.trim());
@@ -207,7 +203,6 @@ if (isHostPage) {
         link.click();
     });
 
-    // 接收強制關閉 (例如管理員關閉)
     socket.on('force-terminated', (reason) => {
         alert(`會議已被強制關閉：${reason}`);
         location.href = 'index.html';
@@ -215,7 +210,7 @@ if (isHostPage) {
 }
 
 // ==========================
-// C. 管理員頁面邏輯 (Admin)
+// C. 管理員頁面邏輯
 // ==========================
 if (isAdminPage) {
     const authOverlay = getEl('admin-auth-overlay');
@@ -284,7 +279,6 @@ if (isAdminPage) {
         }
     }
 
-    // 全域設定
     getEl('change-admin-pwd-btn')?.addEventListener('click', () => {
         const pwd = getEl('new-admin-pwd').value;
         if(pwd) socket.emit('admin-change-password', pwd);
@@ -304,7 +298,7 @@ if (isAdminPage) {
 }
 
 // ==========================
-// D. 共用：Socket 監聽與渲染
+// D. 共用與渲染 (核心)
 // ==========================
 window.applyPreset = function(index) {
     if (!currentPresets[index]) return;
@@ -317,12 +311,10 @@ window.applyPreset = function(index) {
 };
 
 socket.on('state-update', (state) => {
-    // 主持人頁面更新
+    // 1. 主持人頁面更新 (略，這部分沒問題)
     if (isHostPage) {
         getEl('monitor-count').textContent = state.joinedCount;
         getEl('monitor-total').textContent = state.totalVotes;
-        
-        // 更新模板列表
         if (state.presets) {
             currentPresets = state.presets;
             const btnContainer = getEl('preset-buttons');
@@ -332,7 +324,6 @@ socket.on('state-update', (state) => {
                 ).join('');
             }
         }
-
         const monitorOpts = getEl('monitor-options');
         if (state.status === 'waiting') {
             monitorOpts.innerHTML = '<p style="text-align:center; font-size:0.8rem; color:#ccc;">等待發布...</p>';
@@ -341,8 +332,7 @@ socket.on('state-update', (state) => {
             monitorOpts.innerHTML = state.options.map(opt => {
                 const isWin = state.status === 'ended' && max > 0 && opt.count === max;
                 const voters = state.hostVoterMap[opt.id] || [];
-                return `
-                <div style="position:relative; margin-bottom:6px; padding:8px 10px; border:1px solid #eee; background:#fff; ${isWin?'border-color:var(--accent);background:#fffdf0;':''}">
+                return `<div style="position:relative; margin-bottom:6px; padding:8px 10px; border:1px solid #eee; background:#fff; ${isWin?'border-color:var(--accent);background:#fffdf0;':''}">
                     <div style="position:absolute; top:0; left:0; height:100%; width:${opt.percent}%; background:${opt.color}; opacity:0.15;"></div>
                     <div style="position:relative; display:flex; justify-content:space-between; font-size:0.85rem;">
                         <span>${opt.text}</span><span>${opt.count}票 (${opt.percent}%)</span>
@@ -354,27 +344,36 @@ socket.on('state-update', (state) => {
         return;
     }
 
-    // 與會者頁面更新
+    // 2. 與會者頁面更新
     if (!getEl('vote-screen')) return;
     
     currentSettings = state.settings;
     if (state.voteId !== currentVoteId) {
         myVotes = [];
         currentVoteId = state.voteId;
-        hasConfirmedResult = false;
+        hasConfirmedResult = false; // 重置確認狀態
         updateSelectionUI();
     }
+    
+    // 儲存狀態供確認按鈕使用
+    lastServerState = state;
 
     getEl('total-votes').textContent = state.totalVotes;
     getEl('joined-count').textContent = state.joinedCount;
     const timer = getEl('timer');
     if(timer) timer.textContent = state.timeLeft + 's';
-    if(state.status === 'voting' && state.status !== lastStatus) {
-         if(typeof confetti === 'function') confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+
+    // --- 修正2：彩帶觸發時機 ---
+    // 只有當「上次是 voting」且「這次是 ended」時才發射
+    if(lastStatus === 'voting' && state.status === 'ended') {
+         if(typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
     }
     lastStatus = state.status;
 
+    // --- 判斷是否顯示等待畫面 ---
+    // 如果是 waiting 狀態，或是 ended 狀態且使用者已經按了確認
     const showWait = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult);
+
     if (showWait) {
         getEl('question-text').textContent = '';
         getEl('options-container').innerHTML = `
@@ -387,6 +386,7 @@ socket.on('state-update', (state) => {
         return;
     }
 
+    // --- 顯示投票/結果畫面 ---
     getEl('question-text').textContent = state.question;
     const statusTxt = getEl('status-text');
     statusTxt.textContent = state.status === 'voting' ? (currentSettings.blindMode ? '投票中 (盲測)' : '投票中') : '已結束';
@@ -417,12 +417,14 @@ socket.on('state-update', (state) => {
         </div>`;
     }).join('');
 
+    // 顯示確認按鈕
     if (state.status === 'ended') {
         container.innerHTML += `<div style="text-align:center; margin-top:20px;">
             <button class="btn" onclick="confirmResult()" style="width:auto; padding:10px 30px;">👌 收到</button>
         </div>`;
     }
     
+    // 鎖定卡片點擊
     if (state.status === 'ended') {
          container.querySelectorAll('.option-card').forEach(c => c.style.cursor = 'default');
     } else {
@@ -465,10 +467,25 @@ window.handleVote = function(id) {
     socket.emit('submit-vote', { pin: currentPin, username: currentUsername, deviceId, votes: myVotes });
 }
 
-// 修正：直接調用 renderMeeting 而不是透過 socket 觸發
+// --- 修正1：確認按鈕 ---
+// 將函式掛載到 window，並確保有 lastServerState 時直接重繪畫面
 window.confirmResult = function() {
+    console.log("Button Clicked"); // 除錯用
     hasConfirmedResult = true;
     if (lastServerState) {
-        renderMeeting(lastServerState);
+        // 強制根據新的 hasConfirmedResult 狀態重繪畫面
+        // 這裡我們直接調用 socket 的監聽器邏輯，或者直接複製邏輯
+        // 為求穩健，我們直接刷新頁面也是一種方法，但最好是調用渲染函式
+        // 由於我們沒有把 render 拆成獨立函式，最簡單的方法是：
+        // 重新觸發一次 render 邏輯。這裡我們直接手動執行一次渲染邏輯的關鍵部分。
+        
+        // 模擬伺服器更新
+        const listeners = socket.listeners('state-update');
+        if (listeners && listeners.length > 0) {
+            listeners[0](lastServerState);
+        } else {
+            // 如果監聽器抓不到，就 reload
+            location.reload();
+        }
     }
 }
