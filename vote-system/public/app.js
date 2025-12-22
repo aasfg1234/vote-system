@@ -118,7 +118,6 @@ if (isParticipantPage) {
         }
     });
 
-    // [修正] 強制關閉時，直接顯示結束畫面，不跳 alert
     socket.on('force-terminated', (reason) => {
         renderTerminatedScreen(reason);
     });
@@ -251,7 +250,6 @@ if (isHostPage) {
         link.click();
     });
 
-    // 主持人被強制關閉時也跳轉
     socket.on('force-terminated', (reason) => {
         alert(`會議已被強制關閉：${reason}`);
         localStorage.removeItem('vote_host_pin');
@@ -367,6 +365,7 @@ socket.on('history-update', (history) => {
     }
 });
 
+// [修復] 歷史紀錄顯示 (含最高票標示)
 function renderHistory(history) {
     const container = getEl('history-container');
     if (!container) return;
@@ -375,12 +374,27 @@ function renderHistory(history) {
         return;
     }
     let html = '';
+    // 顯示最新的在上面
     [...history].reverse().forEach(record => {
         const timeStr = new Date(record.timestamp).toLocaleTimeString();
+        
+        // 1. 計算該場歷史紀錄的最高票數
+        const maxVotes = Math.max(...record.options.map(o => o.count));
+
         let optionsSummary = '';
         record.options.forEach(opt => {
-             optionsSummary += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:4px; color:#64748b;">
-                <span>${opt.text}</span>
+             // 2. 判斷是否為最高票 (需大於0)
+             const isWinner = maxVotes > 0 && opt.count === maxVotes;
+             
+             // 3. 設定樣式：贏家金色底+粗體；輸家灰色
+             const rowStyle = isWinner 
+                ? 'font-weight:bold; color:var(--text-main); background:#fffdf0; border:1px solid #d4af37; border-radius:4px; padding:4px 8px;' 
+                : 'color:#64748b; padding:2px 8px;';
+             
+             const icon = isWinner ? '👑 ' : '';
+
+             optionsSummary += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:4px; align-items:center; ${rowStyle}">
+                <span>${icon}${opt.text}</span>
                 <span>${opt.count} 票</span>
              </div>`;
         });
@@ -388,13 +402,13 @@ function renderHistory(history) {
         <div class="history-card" style="background:#fff; border:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:4px;">
             <div class="history-title" style="font-weight:bold; margin-bottom:5px; color:var(--text-main);">${record.question}</div>
             <div class="history-stats" style="font-size:0.85rem; color:#999;">🕒 ${timeStr} | 🗳️ 總票數: ${record.totalVotes}</div>
-            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">${optionsSummary}</div>
+            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:8px;">${optionsSummary}</div>
         </div>`;
     });
     container.innerHTML = html;
 }
 
-// [新增] 渲染結束畫面函式 (共用)
+// [渲染結束畫面]
 function renderTerminatedScreen(reason) {
     const optionsContainer = getEl('options-container');
     if (optionsContainer) {
@@ -422,7 +436,6 @@ function renderTerminatedScreen(reason) {
 socket.on('state-update', (state) => {
     // 1. 主持人頁面更新
     if (isHostPage) {
-        // ... (主持人即時監控邏輯保持不變)
         getEl('monitor-count').textContent = state.joinedCount;
         getEl('monitor-total').textContent = state.totalVotes;
         if (state.presets) {
@@ -457,7 +470,6 @@ socket.on('state-update', (state) => {
     // 2. 與會者頁面更新
     if (!getEl('vote-screen')) return;
     
-    // [修正] 如果收到 terminated 狀態，直接顯示結束畫面
     if (state.status === 'terminated') {
         renderTerminatedScreen();
         return;
@@ -576,6 +588,7 @@ window.handleVote = function(id) {
 }
 
 window.confirmResult = function() {
+    console.log("Button Clicked"); 
     hasConfirmedResult = true;
     if (lastServerState) {
         const listeners = socket.listeners('state-update');
@@ -587,7 +600,6 @@ window.confirmResult = function() {
     }
 }
 
-// 統一登出函式
 window.logout = function() {
     localStorage.removeItem('vote_pin');
     localStorage.removeItem('vote_username');
