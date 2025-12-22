@@ -30,44 +30,26 @@ const isParticipantPage = document.body.id === 'participant-page';
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// --- 金句庫 (擴充至 36 句) ---
+// --- ✨ 新增：裝置指紋邏輯 ---
+function getDeviceId() {
+    let id = localStorage.getItem('vote_device_id');
+    if (!id) {
+        // 產生一組隨機字串當作裝置 ID
+        id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        localStorage.setItem('vote_device_id', id);
+    }
+    return id;
+}
+const deviceId = getDeviceId(); // 取得本機 ID
+// ----------------------------
+
 const quotes = [
     "「人生不是選擇題，而是申論題。」",
     "「選擇本身就是一種放棄，但也是一種獲得。」",
     "「此刻的決定，將成為未來的回憶。」",
     "「慢慢來，比較快。」",
     "「所有偉大的事物，都由微小的選擇開始。」",
-    "「聽從你內心的聲音。」",
-    "「最好的路，不一定是最平坦的那條。」",
-    "「猶豫，是因為你還有選擇的權利。」",
-    "「今天的晚安，是為了明天更好的早安。」",
-    "「每一個當下，都是新的起點。」",
-    "「別讓還沒發生的擔憂，偷走你現在的快樂。」",
-    "「重要的不是去哪裡，而是和誰一起去。」",
-    "「有些路，走下去才知道風景有多美。」",
-    "「相信直覺，它比邏輯更懂你。」",
-    "「不完美的選擇，也能造就完美的故事。」",
-    "「只有你自己，能定義你的成功。」",
-    "「勇敢不是不害怕，而是帶著恐懼繼續前行。」",
-    "「休息，是為了走更長遠的路。」",
-    "「答案往往就在問題裡，靜下心就能看見。」",
-    "「生活的樂趣，藏在那些意想不到的轉折中。」",
-    "「你的時間有限，不要浪費時間過別人的生活。」",
-    "「每個選擇都算數，因為那是你的人生。」",
-    "「有時候，不選擇也是一種選擇。」",
-    "「既然選擇了遠方，便只顧風雨兼程。」",
-    "「允許自己偶爾迷路，那是探索世界的過程。」",
-    "「昨天的遺憾，是為了成全今天的智慧。」",
-    "「簡單，是最高級的複雜。」",
-    "「只有拼盡全力，看起來才會毫不費力。」",
-    "「與其等待風來，不如追風而去。」",
-    "「真正的自由，是擁有拒絕的勇氣。」",
-    "「平凡的腳步也可以走完偉大的行程。」",
-    "「保持熱愛，奔赴山海。」",
-    "「星光不問趕路人，時光不負有心人。」",
-    "「做好當下的事，未來自然會來。」",
-    "「快樂不是擁有多，而是計較少。」",
-    "「心之所向，素履以往。」"
+    "「聽從你內心的聲音。」"
 ];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
 
@@ -134,7 +116,8 @@ if (isParticipantPage) {
         currentPin = storedPin;
         currentUsername = storedName;
         if(loginScreen) loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2><p style="text-align:center; color:var(--text-light);">${currentUsername}</p>`;
-        socket.emit('join', { pin: currentPin, username: currentUsername });
+        // ✨ 修改：加入裝置 ID
+        socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
 
     if (joinBtn) {
@@ -147,7 +130,8 @@ if (isParticipantPage) {
             localStorage.setItem('vote_username', username);
             currentPin = pin;
             currentUsername = username;
-            socket.emit('join', { pin: pin, username: username });
+            // ✨ 修改：加入裝置 ID
+            socket.emit('join', { pin: pin, username: username, deviceId: deviceId });
         });
     }
 
@@ -175,7 +159,8 @@ if (isParticipantPage) {
 
 socket.on('connect', () => {
     if (currentPin && currentUsername) {
-        socket.emit('join', { pin: currentPin, username: currentUsername });
+        // ✨ 修改：加入裝置 ID
+        socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
 });
 
@@ -459,7 +444,8 @@ function handleVote(optionId) {
         myVotes = [optionId];
     }
     updateSelectionUI();
-    socket.emit('submit-vote', { votes: myVotes, username: currentUsername });
+    // ✨ 修改：加入裝置 ID
+    socket.emit('submit-vote', { votes: myVotes, username: currentUsername, deviceId: deviceId });
 }
 
 function showToast(msg) {
@@ -476,6 +462,7 @@ function launchConfetti() {
 }
 
 window.logout = function() {
+    // ✨ 注意：我們只清 PIN 和 名字，不清 device_id，這樣才能擋住重複投票
     localStorage.removeItem('vote_pin');
     localStorage.removeItem('vote_username');
     location.href = 'index.html';
