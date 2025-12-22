@@ -1,17 +1,14 @@
 const socket = io();
 
-// --- 1. 隱藏捲軸邏輯 ---
+// --- 1. 基礎設定 ---
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('clean') === 'true') {
     const style = document.createElement('style');
-    style.innerHTML = `
-        ::-webkit-scrollbar { display: none; }
-        body { -ms-overflow-style: none; scrollbar-width: none; }
-    `;
+    style.innerHTML = `::-webkit-scrollbar { display: none; } body { -ms-overflow-style: none; scrollbar-width: none; }`;
     document.head.appendChild(style);
 }
 
-// --- 2. 全域變數與設定 ---
+// 變數
 let myVotes = [];
 let currentSettings = {};
 let lastStatus = 'waiting';
@@ -21,16 +18,18 @@ let currentUsername = '';
 let currentPresets = []; 
 let hasConfirmedResult = false;
 let lastServerState = null;
-
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
+const deviceId = getDeviceId();
 
+// 頁面判斷
 const isHostPage = document.body.id === 'host-page';
 const isParticipantPage = document.body.id === 'participant-page';
+const isAdminPage = document.body.id === 'admin-page'; // 新增
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// --- 裝置指紋 ---
+// --- 輔助函式 ---
 function getDeviceId() {
     let id = localStorage.getItem('vote_device_id');
     if (!id) {
@@ -39,96 +38,20 @@ function getDeviceId() {
     }
     return id;
 }
-const deviceId = getDeviceId();
-
-// --- 金句庫 ---
-const quotes = [
-    "「人生不是選擇題，而是申論題。」",
-    "「選擇本身就是一種放棄，但也是一種獲得。」",
-    "「此刻的決定，將成為未來的回憶。」",
-    "「慢慢來，比較快。」",
-    "「所有偉大的事物，都由微小的選擇開始。」",
-    "「聽從你內心的聲音。」",
-    "「最好的路，不一定是最平坦的那條。」",
-    "「猶豫，是因為你還有選擇的權利。」",
-    "「今天的晚安，是為了明天更好的早安。」",
-    "「每一個當下，都是新的起點。」",
-    "「別讓還沒發生的擔憂，偷走你現在的快樂。」",
-    "「重要的不是去哪裡，而是和誰一起去。」",
-    "「有些路，走下去才知道風景有多美。」",
-    "「相信直覺，它比邏輯更懂你。」",
-    "「不完美的選擇，也能造就完美的故事。」",
-    "「只有你自己，能定義你的成功。」",
-    "「勇敢不是不害怕，而是帶著恐懼繼續前行。」",
-    "「休息，是為了走更長遠的路。」",
-    "「答案往往就在問題裡，靜下心就能看見。」",
-    "「生活的樂趣，藏在那些意想不到的轉折中。」",
-    "「你的時間有限，不要浪費時間過別人的生活。」",
-    "「每個選擇都算數，因為那是你的人生。」",
-    "「有時候，不選擇也是一種選擇。」",
-    "「既然選擇了遠方，便只顧風雨兼程。」",
-    "「允許自己偶爾迷路，那是探索世界的過程。」",
-    "「昨天的遺憾，是為了成全今天的智慧。」",
-    "「簡單，是最高級的複雜。」",
-    "「只有拼盡全力，看起來才會毫不費力。」",
-    "「與其等待風來，不如追風而去。」",
-    "「真正的自由，是擁有拒絕的勇氣。」",
-    "「平凡的腳步也可以走完偉大的行程。」",
-    "「保持熱愛，奔赴山海。」",
-    "「星光不問趕路人，時光不負有心人。」",
-    "「做好當下的事，未來自然會來。」",
-    "「快樂不是擁有多，而是計較少。」",
-    "「心之所向，素履以往。」"
-];
+const quotes = ["「人生不是選擇題，而是申論題。」", "「選擇本身就是一種放棄。」", "「聽從你內心的聲音。」", "「慢慢來，比較快。」", "「重要的不是去哪裡，而是和誰一起去。」"];
 function getRandomQuote() { return quotes[Math.floor(Math.random() * quotes.length)]; }
-
-// --- 3. DOM 元素獲取 ---
 const getEl = (id) => document.getElementById(id);
+function showToast(msg) {
+    const t = getEl('toast'); if(!t) return;
+    t.textContent = msg; t.style.opacity = '1';
+    setTimeout(() => t.style.opacity = '0', 2000);
+}
 
-const loginScreen = getEl('login-screen');
-const voteScreen = getEl('vote-screen');
-const pinInput = getEl('pin-input');
-const usernameInput = getEl('username-input');
-const joinBtn = getEl('join-btn');
-const leaveBtn = getEl('leave-btn');
-const questionEl = getEl('question-text');
-const optionsContainer = getEl('options-container');
-const totalVotesEl = getEl('total-votes');
-const joinedCountEl = getEl('joined-count'); 
-const timerEl = getEl('timer');
-const statusTextEl = getEl('status-text');
-const toastEl = getEl('toast');
-const historyContainer = getEl('history-container');
-const presetButtonsContainer = getEl('preset-buttons');
+// --- 字體調整 ---
 const fontUpBtn = getEl('font-up'); 
 const fontDownBtn = getEl('font-down'); 
-
-const monitorCountEl = getEl('monitor-count');
-const monitorTotalEl = getEl('monitor-total');
-const monitorOptionsEl = getEl('monitor-options');
-
-// --- 4. 關鍵功能 ---
-window.applyPreset = function(index) {
-    if (!currentPresets || !currentPresets[index]) return;
-    const preset = currentPresets[index];
-    const qInput = getEl('h-question');
-    const optInputs = document.querySelectorAll('.opt-text');
-    
-    if(qInput) qInput.value = preset.question;
-    
-    if(optInputs) {
-        optInputs.forEach(i => i.value = '');
-        preset.options.forEach((optText, i) => {
-            if (optInputs[i]) optInputs[i].value = optText;
-        });
-    }
-    showToast('已套用：' + preset.name);
-};
-
-// --- 5. 事件監聽 ---
 if(fontUpBtn) fontUpBtn.addEventListener('click', () => adjustFont(0.1));
 if(fontDownBtn) fontDownBtn.addEventListener('click', () => adjustFont(-0.1));
-
 function adjustFont(delta) {
     currentFontSize += delta;
     if (currentFontSize < 0.6) currentFontSize = 0.6;
@@ -138,535 +61,417 @@ function adjustFont(delta) {
     showToast(`字體大小: ${Math.round(currentFontSize * 100)}%`);
 }
 
+// ==========================
+// A. 與會者頁面邏輯
+// ==========================
 if (isParticipantPage) {
+    const loginScreen = getEl('login-screen');
+    const voteScreen = getEl('vote-screen');
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
+
     if (storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
-        if(loginScreen) loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2><p style="text-align:center; color:var(--text-light);">${currentUsername}</p>`;
+        loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2>`;
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
 
+    const joinBtn = getEl('join-btn');
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
-            const pin = pinInput.value;
-            const username = usernameInput.value.trim();
+            const pin = getEl('pin-input').value;
+            const username = getEl('username-input').value.trim();
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
             localStorage.setItem('vote_pin', pin);
             localStorage.setItem('vote_username', username);
             currentPin = pin;
             currentUsername = username;
-            socket.emit('join', { pin: pin, username: username, deviceId: deviceId });
+            socket.emit('join', { pin, username, deviceId });
         });
     }
 
-    if (leaveBtn) {
-        leaveBtn.addEventListener('click', () => {
-            if (confirm('確定要離開會議嗎？')) logout();
-        });
-    }
+    getEl('leave-btn')?.addEventListener('click', () => {
+        if (confirm('確定要離開會議嗎？')) {
+            localStorage.removeItem('vote_pin');
+            localStorage.removeItem('vote_username');
+            location.href = 'index.html';
+        }
+    });
 
     socket.on('joined', (data) => {
         if (data.success) {
-            if(loginScreen) loginScreen.classList.add('hidden');
-            if(voteScreen) voteScreen.classList.remove('hidden');
+            loginScreen.classList.add('hidden');
+            voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
             localStorage.removeItem('vote_pin');
-            if (data.error === '會議已結束') {
-                setTimeout(() => location.href = 'index.html', 2000);
-            } else {
-                setTimeout(() => location.reload(), 1000);
-            }
+            setTimeout(() => location.href = 'index.html', 1500);
         }
+    });
+
+    // 接收強制關閉
+    socket.on('force-terminated', (reason) => {
+        alert(`會議已結束：${reason}`);
+        localStorage.removeItem('vote_pin');
+        location.href = 'index.html';
     });
 }
 
-socket.on('connect', () => {
-    if (currentPin && currentUsername) {
-        socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
+// ==========================
+// B. 主持人頁面邏輯 (Host)
+// ==========================
+if (isHostPage) {
+    const authOverlay = getEl('host-auth-overlay');
+    const createBtn = getEl('create-meeting-btn');
+    const nameInput = getEl('host-name-input');
+    
+    // 建立會議
+    createBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return showToast('請輸入會議名稱');
+        socket.emit('create-meeting', name);
+    });
+
+    socket.on('create-success', (data) => {
+        authOverlay.style.opacity = '0';
+        setTimeout(() => authOverlay.remove(), 500);
+        getEl('host-pin-display').textContent = data.pin;
+        getEl('host-name-display').textContent = data.hostName;
+        currentPin = data.pin;
+        currentUsername = data.hostName;
+        showToast('會議室建立成功');
+    });
+
+    // 設定 Modal 相關
+    const settingsModal = getEl('settings-modal');
+    getEl('open-settings-btn')?.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+    getEl('close-settings-btn')?.addEventListener('click', () => settingsModal.classList.add('hidden'));
+
+    getEl('save-host-name-btn')?.addEventListener('click', () => {
+        const newName = getEl('new-host-name').value;
+        if (newName.trim()) socket.emit('change-host-name', newName.trim());
+    });
+
+    getEl('add-preset-btn')?.addEventListener('click', () => {
+        const name = getEl('new-preset-name').value;
+        const question = getEl('new-preset-question').value;
+        const opts = getEl('new-preset-options').value;
+        if (name && question && opts) {
+            socket.emit('add-preset', { name, question, options: opts.split(',') });
+            showToast('樣板已新增');
+        }
+    });
+
+    socket.on('host-name-updated', (n) => {
+        getEl('host-name-display').textContent = n;
+        showToast('名稱更新');
+    });
+
+    // 投票控制
+    getEl('start-vote-btn')?.addEventListener('click', () => {
+        const question = getEl('h-question').value;
+        const opts = Array.from(document.querySelectorAll('.opt-text')).map(i => i.value).filter(v => v.trim());
+        if (!question || opts.length < 2) return showToast('資料不完整');
+        const colors = ['#84a98c', '#6b705c', '#d66853', '#d4af37', '#2c2c2c', '#8e8d8a'];
+        
+        socket.emit('start-vote', {
+            question,
+            options: opts.map((t, i) => ({ text: t, color: colors[i % colors.length] })),
+            duration: parseInt(getEl('h-timer').value) || 0,
+            allowMulti: getEl('h-multi').checked,
+            blindMode: getEl('h-blind').checked
+        });
+    });
+
+    getEl('stop-vote-btn')?.addEventListener('click', () => socket.emit('stop-vote'));
+    getEl('clear-form-btn')?.addEventListener('click', () => {
+        getEl('h-question').value = '';
+        document.querySelectorAll('.opt-text').forEach(i => i.value = '');
+    });
+    
+    getEl('terminate-btn')?.addEventListener('click', () => {
+        if(confirm('確定要結束會議？這將強制所有人退出。')) {
+            socket.emit('request-export');
+            socket.emit('terminate-meeting');
+        }
+    });
+    
+    getEl('export-btn')?.addEventListener('click', () => socket.emit('request-export'));
+    
+    socket.on('export-data', (csv) => {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+        link.download = `Result_${currentPin}.csv`;
+        link.click();
+    });
+
+    // 接收強制關閉 (例如管理員關閉)
+    socket.on('force-terminated', (reason) => {
+        alert(`會議已被強制關閉：${reason}`);
+        location.href = 'index.html';
+    });
+}
+
+// ==========================
+// C. 管理員頁面邏輯 (Admin) - NEW
+// ==========================
+if (isAdminPage) {
+    const authOverlay = getEl('admin-auth-overlay');
+    const pwdInput = getEl('admin-password-input');
+    
+    getEl('admin-login-submit').addEventListener('click', () => {
+        socket.emit('admin-login', pwdInput.value);
+    });
+
+    socket.on('admin-login-fail', () => {
+        const msg = getEl('login-error-msg');
+        msg.style.opacity = '1';
+        pwdInput.classList.add('shake');
+        setTimeout(()=> pwdInput.classList.remove('shake'), 500);
+    });
+
+    socket.on('admin-login-success', () => {
+        authOverlay.style.opacity = '0';
+        setTimeout(() => authOverlay.remove(), 500);
+        showToast('管理員登入成功');
+    });
+
+    socket.on('admin-list-update', (list) => {
+        const container = getEl('meeting-list-body');
+        if (!container) return;
+        
+        if (list.length === 0) {
+            container.innerHTML = '<p style="text-align:center; padding:20px; color:#ccc;">目前沒有進行中的會議</p>';
+            return;
+        }
+
+        let html = '';
+        list.forEach(m => {
+            let statusClass = 'status-waiting';
+            if (m.status === 'voting') statusClass = 'status-voting';
+            if (m.status === 'terminated') statusClass = 'status-ended';
+
+            html += `
+            <div class="mt-list-item">
+                <div style="font-weight:bold; color:var(--primary);">${m.pin}</div>
+                <div>${m.hostName}</div>
+                <div><span class="status-tag ${statusClass}">${m.status}</span></div>
+                <div>👤 ${m.activeUsers}</div>
+                <div class="timeout-control">
+                    <input type="number" class="timeout-input" value="${m.timeoutSetting}" 
+                           onchange="updateTimeout('${m.pin}', this.value)"> hr
+                    <span style="font-size:0.8rem; color:#999;">(剩 ${m.remainingTime}分)</span>
+                </div>
+                <div>
+                    <button class="btn btn-stop" style="padding:5px 10px; font-size:0.8rem; margin:0;" 
+                            onclick="terminateMeeting('${m.pin}')">關閉</button>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+    });
+
+    window.updateTimeout = function(pin, hours) {
+        socket.emit('admin-update-timeout', { pin, hours });
+        showToast('超時設定已更新');
     }
-});
+
+    window.terminateMeeting = function(pin) {
+        if (confirm(`確定要強制關閉會議 ${pin} 嗎？`)) {
+            socket.emit('admin-terminate', pin);
+        }
+    }
+
+    // 全域設定
+    getEl('change-admin-pwd-btn')?.addEventListener('click', () => {
+        const pwd = getEl('new-admin-pwd').value;
+        if(pwd) socket.emit('admin-change-password', pwd);
+    });
+
+    getEl('add-global-preset-btn')?.addEventListener('click', () => {
+        const name = getEl('g-preset-name').value;
+        const q = getEl('g-preset-q').value;
+        const opt = getEl('g-preset-opt').value;
+        if (name && q && opt) {
+            socket.emit('admin-add-preset', { name, question: q, options: opt.split(',') });
+            showToast('模板已新增');
+        }
+    });
+
+    socket.on('admin-msg', (msg) => showToast(msg));
+}
+
+// ==========================
+// D. 共用：Socket 監聽與渲染
+// ==========================
+window.applyPreset = function(index) {
+    if (!currentPresets[index]) return;
+    const p = currentPresets[index];
+    getEl('h-question').value = p.question;
+    const inputs = document.querySelectorAll('.opt-text');
+    inputs.forEach(i => i.value = '');
+    p.options.forEach((t, i) => { if(inputs[i]) inputs[i].value = t; });
+    showToast(`套用：${p.name}`);
+};
 
 socket.on('state-update', (state) => {
+    // 主持人頁面更新
     if (isHostPage) {
-        renderHostMonitor(state); 
-        if (state.presets) renderPresets(state.presets);
-        return; 
-    }
-    if (!voteScreen) return; 
-    lastServerState = state;
-    renderMeeting(state);
-});
+        getEl('monitor-count').textContent = state.joinedCount;
+        getEl('monitor-total').textContent = state.totalVotes;
+        
+        // 更新模板列表
+        if (state.presets) {
+            currentPresets = state.presets;
+            const btnContainer = getEl('preset-buttons');
+            if(btnContainer) {
+                btnContainer.innerHTML = state.presets.map((p, i) => 
+                    `<button class="preset-btn" onclick="applyPreset(${i})">${p.name}</button>`
+                ).join('');
+            }
+        }
 
-socket.on('history-update', (history) => {
-    if (isHostPage) {
-        renderHistory(history);
-    }
-});
-
-function renderHostMonitor(state) {
-    if (!monitorOptionsEl) return;
-    if (monitorCountEl) monitorCountEl.textContent = state.joinedCount;
-    if (monitorTotalEl) monitorTotalEl.textContent = state.totalVotes;
-
-    if (state.status === 'waiting') {
-        monitorOptionsEl.innerHTML = '<p style="text-align:center; font-size:0.8rem; color:#ccc;">等待發布...</p>';
+        const monitorOpts = getEl('monitor-options');
+        if (state.status === 'waiting') {
+            monitorOpts.innerHTML = '<p style="text-align:center; font-size:0.8rem; color:#ccc;">等待發布...</p>';
+        } else {
+            let max = Math.max(...state.options.map(o=>o.count));
+            monitorOpts.innerHTML = state.options.map(opt => {
+                const isWin = state.status === 'ended' && max > 0 && opt.count === max;
+                const voters = state.hostVoterMap[opt.id] || [];
+                return `
+                <div style="position:relative; margin-bottom:6px; padding:8px 10px; border:1px solid #eee; background:#fff; ${isWin?'border-color:var(--accent);background:#fffdf0;':''}">
+                    <div style="position:absolute; top:0; left:0; height:100%; width:${opt.percent}%; background:${opt.color}; opacity:0.15;"></div>
+                    <div style="position:relative; display:flex; justify-content:space-between; font-size:0.85rem;">
+                        <span>${opt.text}</span><span>${opt.count}票 (${opt.percent}%)</span>
+                    </div>
+                    ${voters.length ? `<div style="font-size:0.75rem; color:#64748b; margin-top:4px;">${voters.join(', ')}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
         return;
     }
 
-    let html = '';
-    let maxVotes = 0;
-    if (state.status === 'ended') {
-        maxVotes = Math.max(...state.options.map(o => o.count));
-    }
-
-    state.options.forEach(opt => {
-        const percent = opt.percent;
-        const count = opt.count;
-        let highlightStyle = '';
-        if (state.status === 'ended' && maxVotes > 0 && count === maxVotes) {
-            highlightStyle = 'border: 2px solid var(--accent); background: #fffdf0;';
-        }
-
-        let votersHtml = '';
-        if (state.hostVoterMap && state.hostVoterMap[opt.id] && state.hostVoterMap[opt.id].length > 0) {
-            votersHtml = '<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; position:relative; z-index:2;">';
-            state.hostVoterMap[opt.id].forEach(name => {
-                votersHtml += `<span style="background:#e2e8f0; color:#475569; font-size:0.75rem; padding:2px 6px; border-radius:4px;">${name}</span>`;
-            });
-            votersHtml += '</div>';
-        }
-
-        html += `
-        <div style="position:relative; margin-bottom:6px; padding:8px 10px; border:1px solid #eee; border-radius:3px; background:#fff; ${highlightStyle}">
-            <div style="position:absolute; top:0; left:0; bottom:0; width:${percent}%; background:${opt.color}; opacity:0.15; z-index:0;"></div>
-            <div style="position:relative; z-index:1; display:flex; justify-content:space-between; font-size:0.85rem;">
-                <span style="font-weight:500;">${opt.text}</span>
-                <span style="color:var(--text-light);">${count} 票 (${percent}%)</span>
-            </div>
-            ${votersHtml} 
-        </div>`;
-    });
-    monitorOptionsEl.innerHTML = html;
-}
-
-socket.on('vote-confirmed', (votes) => {
-    myVotes = votes;
-    updateSelectionUI();
-    showToast('投票已記錄');
-});
-
-socket.on('timer-tick', (timeLeft) => {
-    if(timerEl) {
-        timerEl.textContent = timeLeft + 's';
-        timerEl.style.color = timeLeft <= 10 ? 'var(--danger)' : 'inherit';
-    }
-});
-
-function renderMeeting(state) {
+    // 與會者頁面更新
+    if (!getEl('vote-screen')) return;
+    
+    currentSettings = state.settings;
     if (state.voteId !== currentVoteId) {
         myVotes = [];
         currentVoteId = state.voteId;
         hasConfirmedResult = false;
-        updateSelectionUI(); 
+        updateSelectionUI();
     }
 
-    if (state.status === 'terminated') {
-        renderTerminatedScreen();
-        return;
+    getEl('total-votes').textContent = state.totalVotes;
+    getEl('joined-count').textContent = state.joinedCount;
+    const timer = getEl('timer');
+    if(timer) timer.textContent = state.timeLeft + 's';
+    if(state.status === 'voting' && state.status !== lastStatus) {
+         if(typeof confetti === 'function') confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
     }
-
-    currentSettings = state.settings;
-    if(totalVotesEl) totalVotesEl.textContent = state.totalVotes;
-    if(joinedCountEl) joinedCountEl.textContent = state.joinedCount;
-    if(timerEl) timerEl.textContent = state.timeLeft + 's';
-
-    if (lastStatus === 'voting' && state.status === 'ended') launchConfetti();
     lastStatus = state.status;
 
-    const showWaitingScreen = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult && !isHostPage);
-
-    if (showWaitingScreen) {
-        if(state.status === 'waiting') myVotes = []; 
-        if(statusTextEl) statusTextEl.textContent = state.status === 'ended' ? '等待下一題' : '準備中';
-        
-        if(optionsContainer) {
-            optionsContainer.className = ''; // 清除 reveal mode
-            optionsContainer.innerHTML = `
+    const showWait = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult);
+    if (showWait) {
+        getEl('question-text').textContent = '';
+        getEl('options-container').innerHTML = `
             <div style="text-align:center; padding:60px 20px; color:var(--text-light);">
-                <div style="font-family:'Noto Serif TC'; font-size:1.5rem; margin-bottom:15px; color:var(--primary);">☕</div>
-                <p style="font-family:'Noto Serif TC'; font-size:1.2rem; margin-bottom:10px; font-style:italic;">${getRandomQuote()}</p>
-                <p style="font-size:0.9rem; opacity:0.7;">等待主持人開啟下一題...</p>
+                <div style="font-size:1.5rem; margin-bottom:15px;">☕</div>
+                <p style="font-style:italic;">${getRandomQuote()}</p>
+                <p style="font-size:0.9rem; opacity:0.7; margin-top:10px;">等待下一題...</p>
             </div>`;
-        }
-        
-        if(questionEl) questionEl.textContent = '';
+        getEl('status-text').textContent = state.status === 'waiting' ? '準備中' : '等待下一題';
         return;
     }
+
+    getEl('question-text').textContent = state.question;
+    const statusTxt = getEl('status-text');
+    statusTxt.textContent = state.status === 'voting' ? (currentSettings.blindMode ? '投票中 (盲測)' : '投票中') : '已結束';
+    statusTxt.style.color = state.status === 'voting' ? 'var(--success)' : 'var(--danger)';
+
+    let max = Math.max(...state.options.map(o => o.count));
+    const container = getEl('options-container');
     
-    if(questionEl) questionEl.textContent = state.question;
-
-    if(statusTextEl) {
-        if (state.status === 'voting') {
-            statusTextEl.textContent = currentSettings.blindMode ? '投票進行中 (🙈 盲測)' : '投票進行中';
-            statusTextEl.style.color = currentSettings.blindMode ? '#d97706' : 'var(--success)';
-        } else {
-            statusTextEl.textContent = '投票結束 (已鎖定)';
-            statusTextEl.style.color = 'var(--danger)';
-        }
-    }
-
-    let maxVotes = 0;
-    if (state.status === 'ended') {
-        maxVotes = Math.max(...state.options.map(o => o.count));
-        // 開啟聚光燈模式
-        if(optionsContainer) optionsContainer.classList.add('reveal-mode');
-    } else {
-        if(optionsContainer) optionsContainer.classList.remove('reveal-mode');
-    }
-
-    let html = '';
-    state.options.forEach(opt => {
+    // 檢查是否已渲染過，若結構相同則只更新數據 (簡單優化)
+    // 這裡為了保持代碼簡單，我們每次重繪，但在實際生產中可做 Diff
+    container.innerHTML = state.options.map(opt => {
         const isBlind = opt.percent === -1;
-        const displayWidth = isBlind ? 0 : opt.percent;
+        const percent = isBlind ? '?' : opt.percent;
+        const count = isBlind ? '' : `${opt.count}票`;
+        const isWin = state.status === 'ended' && max > 0 && opt.count === max;
         
-        // --- 雜誌風格排版邏輯 ---
-        const displayPercent = isBlind ? '?' : opt.percent + '<small style="font-size:0.5em;">%</small>';
-        const displayCount = isBlind ? '' : `${opt.count} 票`;
-        
-        const bgOpacity = isBlind ? 0 : 1; // 交給 CSS 的 opacity
-        
-        let resultClass = '';
-        let crownHtml = '';
-        if (state.status === 'ended' && maxVotes > 0) {
-            if (opt.count === maxVotes) {
-                resultClass = 'winner-card';
-                crownHtml = '<div class="winner-icon">👑</div>';
-            } else {
-                resultClass = 'loser-card';
-            }
-        }
-
-        html += `
-        <div class="option-card ${resultClass}" 
-             id="opt-${opt.id}"
-             onclick="handleVote(${opt.id})" 
-             style="border-left: 5px solid ${opt.color};">
-             
-            ${crownHtml}
-            <div class="stamp-mark">已選</div>
-            
-            <div class="progress-bg" style="width: ${displayWidth}%; background-color: ${opt.color};"></div>
-            
+        return `
+        <div class="option-card ${isWin ? 'winner-card' : ''} ${state.status==='ended' && !isWin ? 'loser-card' : ''}" 
+             id="opt-${opt.id}" onclick="handleVote(${opt.id})" style="border-left: 5px solid ${opt.color};">
+            ${isWin ? '<div class="winner-icon">👑</div>' : ''}
+            <div class="stamp-mark" style="display:${myVotes.includes(opt.id)?'block':'none'}">已選</div>
+            <div class="progress-bg" style="width:${isBlind?0:opt.percent}%; background:${opt.color};"></div>
             <div class="option-content">
                 <span class="option-text">${opt.text}</span>
-                <div style="display:flex; flex-direction:column; align-items:flex-end;">
-                    <span class="opt-percent" style="color:${isBlind ? '#cbd5e1' : 'var(--text-main)'}">${displayPercent}</span>
-                    <span class="opt-count">${displayCount}</span>
+                <div style="text-align:right;">
+                    <span class="opt-percent">${percent}${isBlind?'':'<small>%</small>'}</span>
+                    <span class="opt-count">${count}</span>
                 </div>
             </div>
         </div>`;
-    });
-    
-    if (state.status === 'ended' && !isHostPage) {
-        html += `
-            <div style="margin-top: 30px; text-align: center; animation: fadeIn 0.5s;">
-                <button onclick="confirmResult()" class="btn" style="background: var(--text-main); color: #fff; width:auto; display:inline-block; padding:12px 30px;">
-                    👌 收到，等待下一題
-                </button>
-            </div>
-        `;
-    }
+    }).join('');
 
-    if(optionsContainer) {
-        optionsContainer.innerHTML = html;
-        updateSelectionUI();
-        if (state.status === 'ended') { 
-             // 結束後禁止點擊，但要保持樣式正常
-             Array.from(optionsContainer.children).forEach(child => {
-                if (child.classList.contains('option-card')) {
-                    child.style.cursor = 'default';
-                }
-             });
-        }
-    }
-}
-
-window.confirmResult = function() {
-    hasConfirmedResult = true;
-    if (lastServerState) renderMeeting(lastServerState);
-}
-
-function renderTerminatedScreen() {
-    if (optionsContainer) {
-        optionsContainer.className = '';
-        optionsContainer.innerHTML = `
-            <div style="text-align:center; padding:50px 20px;">
-                <div style="font-size:3rem; margin-bottom:20px;">🏁</div>
-                <h2 style="color:var(--text-main); margin-bottom:10px;">會議已結束</h2>
-                <p style="color:var(--text-light);">感謝您的參與</p>
-                ${isHostPage ? `
-                    <p style="font-size:0.9rem; margin-top:20px; color:var(--success);">✓ 報表已自動下載</p>
-                    <button onclick="location.href='index.html'" class="btn" style="margin-top:20px; background:var(--text-main);">🏠 回首頁 (開啟新會議)</button>
-                ` : ''}
-                ${isParticipantPage ? '<button onclick="location.href=\'index.html\'" class="btn" style="margin-top:30px;">回首頁</button>' : ''}
-            </div>
-        `;
-    }
-    if (questionEl) questionEl.textContent = '';
-    if (statusTextEl) statusTextEl.textContent = '已結束';
-    if (leaveBtn) leaveBtn.style.display = 'none';
-}
-
-function renderHistory(history) {
-    if (!historyContainer) return;
-    if (history.length === 0) {
-        historyContainer.innerHTML = '<p style="text-align:center; color:#ccc; font-size:0.9rem;">尚未有歸檔紀錄</p>';
-        return;
-    }
-    let html = '';
-    [...history].reverse().forEach(record => {
-        const timeStr = new Date(record.timestamp).toLocaleTimeString();
-        let optionsSummary = '';
-        record.options.forEach(opt => {
-             optionsSummary += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:4px; color:#64748b;">
-                <span>${opt.text}</span>
-                <span>${opt.count} 票</span>
-             </div>`;
-        });
-        html += `
-        <div class="history-card" style="background:#fff; border:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:4px;">
-            <div class="history-title" style="font-weight:bold; margin-bottom:5px;">${record.question}</div>
-            <div class="history-stats" style="font-size:0.85rem; color:#999;">🕒 ${timeStr} | 🗳️ 總票數: ${record.totalVotes}</div>
-            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">${optionsSummary}</div>
+    if (state.status === 'ended') {
+        container.innerHTML += `<div style="text-align:center; margin-top:20px;">
+            <button class="btn" onclick="confirmResult()" style="width:auto; padding:10px 30px;">👌 收到</button>
         </div>`;
-    });
-    historyContainer.innerHTML = html;
-}
+    }
+    
+    // 如果狀態是 ended，鎖定點擊
+    if (state.status === 'ended') {
+         container.querySelectorAll('.option-card').forEach(c => c.style.cursor = 'default');
+    } else {
+        updateSelectionUI();
+    }
+});
 
-function renderPresets(presets) {
-    if (!presetButtonsContainer) return;
-    currentPresets = presets; 
-    let html = '';
-    presets.forEach((preset, index) => {
-        html += `<button class="preset-btn" type="button" onclick="applyPreset(${index})">${preset.name}</button>`;
-    });
-    presetButtonsContainer.innerHTML = html;
-}
+socket.on('timer-tick', (t) => {
+    const el = getEl('timer'); if(el) el.textContent = t + 's';
+    const hEl = getEl('h-timer'); if(hEl && document.activeElement !== hEl) hEl.value = t;
+});
 
 function updateSelectionUI() {
-    if (!optionsContainer) return;
-    const cards = optionsContainer.querySelectorAll('.option-card');
+    const cards = document.querySelectorAll('.option-card');
     cards.forEach(card => {
-        const optId = parseInt(card.id.replace('opt-', ''));
-        const isSelected = myVotes.includes(optId);
-        const stamp = card.querySelector('.stamp-mark');
-        if (isSelected) {
+        const id = parseInt(card.id.split('-')[1]);
+        if (myVotes.includes(id)) {
             card.classList.add('selected');
+            const stamp = card.querySelector('.stamp-mark');
             if(stamp) stamp.style.display = 'block';
         } else {
             card.classList.remove('selected');
+            const stamp = card.querySelector('.stamp-mark');
             if(stamp) stamp.style.display = 'none';
         }
     });
 }
 
-function handleVote(optionId) {
-    if (isHostPage) return; 
-
-    if (statusTextEl && statusTextEl.textContent.includes('結束')) return;
-    if (navigator.vibrate) navigator.vibrate(10); // 縮短震動時間，更乾脆
-
+window.handleVote = function(id) {
+    if (!getEl('vote-screen') || document.querySelector('.winner-card')) return;
+    if (navigator.vibrate) navigator.vibrate(10);
+    
     if (currentSettings.allowMulti) {
-        if (myVotes.includes(optionId)) myVotes = myVotes.filter(id => id !== optionId);
-        else myVotes.push(optionId);
+        if (myVotes.includes(id)) myVotes = myVotes.filter(v => v !== id);
+        else myVotes.push(id);
     } else {
-        myVotes = [optionId];
+        myVotes = [id];
     }
     updateSelectionUI();
-    socket.emit('submit-vote', { votes: myVotes, username: currentUsername, deviceId: deviceId });
+    socket.emit('submit-vote', { pin: currentPin, username: currentUsername, deviceId, votes: myVotes });
 }
 
-function showToast(msg) {
-    if(!toastEl) return;
-    toastEl.textContent = msg;
-    toastEl.style.opacity = '1';
-    setTimeout(() => toastEl.style.opacity = '0', 2000);
-}
-
-function launchConfetti() {
-    if(typeof confetti === 'function') {
-        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+window.confirmResult = function() {
+    hasConfirmedResult = true;
+    if (lastServerState) {
+        // 觸發一次假更新來切換顯示
+        socket.listeners('state-update')[0](lastServerState);
     }
-}
-
-window.logout = function() {
-    localStorage.removeItem('vote_pin');
-    localStorage.removeItem('vote_username');
-    location.href = 'index.html';
-}
-
-// Host 頁面相關邏輯 (保持不變，略作整理)
-if (isHostPage) {
-    const authOverlay = getEl('host-auth-overlay');
-    const pwdInput = getEl('host-password-input');
-    const loginBtn = getEl('host-login-submit');
-    const errorMsg = getEl('login-error-msg');
-    
-    const settingsModal = getEl('settings-modal');
-    const openSettingsBtn = getEl('open-settings-btn');
-    const closeSettingsBtn = getEl('close-settings-btn');
-    const savePasswordBtn = getEl('save-password-btn');
-    const addPresetBtn = getEl('add-preset-btn');
-    const saveHostNameBtn = getEl('save-host-name-btn');
-    
-    if (openSettingsBtn) {
-        openSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
-        closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
-    }
-
-    if (savePasswordBtn) {
-        savePasswordBtn.addEventListener('click', () => {
-            const newPwd = getEl('new-host-password').value;
-            if (newPwd.trim()) socket.emit('change-password', newPwd);
-            else showToast('密碼不能為空');
-        });
-    }
-
-    if (saveHostNameBtn) {
-        saveHostNameBtn.addEventListener('click', () => {
-            const newName = getEl('new-host-name').value;
-            if (newName.trim()) socket.emit('change-host-name', newName.trim());
-            else showToast('暱稱不能為空');
-        });
-    }
-
-    if (addPresetBtn) {
-        addPresetBtn.addEventListener('click', () => {
-            const name = getEl('new-preset-name').value;
-            const question = getEl('new-preset-question').value;
-            const optionsStr = getEl('new-preset-options').value;
-            if (name && question && optionsStr) {
-                const options = optionsStr.split(',').map(s => s.trim()).filter(s => s);
-                socket.emit('add-preset', { name, question, options });
-                showToast('樣板已新增');
-                getEl('new-preset-name').value = '';
-                getEl('new-preset-question').value = '';
-                getEl('new-preset-options').value = '';
-            } else {
-                showToast('請填寫完整資訊');
-            }
-        });
-    }
-    
-    socket.on('password-updated', () => {
-        showToast('密碼修改成功');
-        getEl('new-host-password').value = '';
-    });
-
-    socket.on('host-name-updated', (newName) => {
-        showToast('主持人暱稱已更新為: ' + newName);
-        currentUsername = newName;
-    });
-
-    function attemptLogin() {
-        const pwd = pwdInput.value;
-        if (!pwd) return;
-        socket.emit('host-login', pwd);
-    }
-
-    if(loginBtn) loginBtn.addEventListener('click', attemptLogin);
-    if(pwdInput) pwdInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') attemptLogin(); });
-
-    socket.on('host-login-success', (data) => {
-        authOverlay.style.opacity = '0';
-        setTimeout(() => authOverlay.remove(), 500);
-        getEl('host-pin-display').textContent = data.pin;
-        currentPin = data.pin; 
-        currentUsername = data.hostName || 'HOST';
-        if(getEl('new-host-name')) getEl('new-host-name').value = currentUsername;
-        socket.emit('join', { pin: data.pin, username: currentUsername }); 
-        showToast('🔓 控制台已解鎖');
-    });
-
-    socket.on('host-login-fail', () => {
-        errorMsg.style.opacity = '1';
-        pwdInput.value = '';
-        pwdInput.focus();
-        pwdInput.style.animation = 'shake 0.5s';
-        setTimeout(() => pwdInput.style.animation = '', 500);
-    });
-
-    const startBtn = getEl('start-vote-btn');
-    if(startBtn) {
-        startBtn.addEventListener('click', () => {
-            const question = getEl('h-question').value;
-            if(!question) return showToast('請輸入題目');
-            const optInputs = document.querySelectorAll('.opt-text');
-            const options = [];
-            const colors = ['#84a98c', '#6b705c', '#d66853', '#d4af37', '#2c2c2c', '#8e8d8a'];
-            optInputs.forEach((input, idx) => {
-                if(input.value.trim()) options.push({ text: input.value, color: colors[idx % colors.length] });
-            });
-            if(options.length < 2) return showToast('至少需要兩個選項');
-
-            socket.emit('start-vote', {
-                question, options,
-                duration: parseInt(getEl('h-timer').value) || 0,
-                allowMulti: getEl('h-multi').checked,
-                blindMode: getEl('h-blind').checked
-            });
-            showToast('投票已開始');
-        });
-    }
-
-    const stopBtn = getEl('stop-vote-btn');
-    if(stopBtn) {
-        stopBtn.addEventListener('click', () => {
-            socket.emit('stop-vote');
-            showToast('已強制結束');
-        });
-    }
-
-    const terminateBtn = getEl('terminate-btn');
-    if (terminateBtn) {
-        terminateBtn.addEventListener('click', () => {
-            if (confirm('確定要結束整場會議嗎？\n(這將會強制所有人退出，並自動下載報表)')) {
-                socket.emit('request-export');
-                socket.emit('terminate-meeting');
-                showToast('會議已終止，正在下載報表...');
-            }
-        });
-    }
-
-    const clearBtn = getEl('clear-form-btn');
-    if(clearBtn) {
-        clearBtn.addEventListener('click', () => {
-            getEl('h-question').value = '';
-            document.querySelectorAll('.opt-text').forEach((input, i) => input.value = i<2 ? (i===0?'同意':'不同意') : '');
-            showToast('表格已重置');
-        });
-    }
-
-    const exportBtn = getEl('export-btn');
-    if(exportBtn) {
-        exportBtn.addEventListener('click', () => {
-            socket.emit('request-export');
-            showToast('正在準備檔案...');
-        });
-    }
-
-    socket.on('export-data', (csvContent) => {
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `會議結果匯總_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    });
 }
