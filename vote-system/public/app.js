@@ -69,8 +69,12 @@ if (isParticipantPage) {
     const voteScreen = getEl('vote-screen');
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
+    
+    // [修正] 判斷是否為預覽模式
+    const isPreview = urlParams.get('preview') === 'true';
 
-    if (storedPin && storedName) {
+    // 只有在「不是預覽模式」且「有儲存資料」時才自動登入
+    if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
         loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2>`;
@@ -84,6 +88,10 @@ if (isParticipantPage) {
             const username = getEl('username-input').value.trim();
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
+            
+            // 如果是在預覽模式下登入，我們依然允許寫入 localStorage
+            // 這樣可以模擬真實使用者的行為，但下次重整 iframe 時因為有 preview 參數，
+            // 依然會停在登入頁 (符合主持人想看登入頁的需求)，除非手動再按一次進入。
             localStorage.setItem('vote_pin', pin);
             localStorage.setItem('vote_username', username);
             currentPin = pin;
@@ -106,8 +114,14 @@ if (isParticipantPage) {
             voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
-            localStorage.removeItem('vote_pin');
-            setTimeout(() => location.href = 'index.html', 1500);
+            // 如果是預覽模式，登入失敗不要跳轉，停留在原地即可
+            if (!isPreview) {
+                localStorage.removeItem('vote_pin');
+                setTimeout(() => location.href = 'index.html', 1500);
+            } else {
+                // 預覽模式下清空欄位讓主持人重試
+                getEl('pin-input').value = '';
+            }
         }
     });
 
@@ -126,10 +140,9 @@ if (isHostPage) {
     const createBtn = getEl('create-meeting-btn');
     const nameInput = getEl('host-name-input');
     
-    // [新增] 檢查是否有之前的會議記錄
+    // 檢查是否有之前的會議記錄
     const storedHostPin = localStorage.getItem('vote_host_pin');
     if (storedHostPin) {
-        // 改變 UI 顯示 "正在恢復..."
         getEl('host-auth-overlay').innerHTML = `
             <div class="container" style="max-width:400px; text-align:center; padding:50px;">
                 <div style="font-size:3rem; margin-bottom:20px;">🔄</div>
@@ -139,11 +152,9 @@ if (isHostPage) {
                 <button onclick="clearHostData()" class="btn" style="background:transparent; border:1px solid #ccc; color:#666; margin-top:20px;">取消並建立新會議</button>
             </div>
         `;
-        // 嘗試恢復
         socket.emit('host-resume', storedHostPin);
     }
 
-    // 輔助：清除舊資料 (給取消按鈕用)
     window.clearHostData = function() {
         localStorage.removeItem('vote_host_pin');
         localStorage.removeItem('vote_host_name');
@@ -163,13 +174,11 @@ if (isHostPage) {
         getEl('host-name-display').textContent = data.hostName;
         currentPin = data.pin;
         currentUsername = data.hostName;
-        // [新增] 儲存 Host 狀態
         localStorage.setItem('vote_host_pin', data.pin);
         localStorage.setItem('vote_host_name', data.hostName);
         showToast('會議室建立成功');
     });
 
-    // [新增] 恢復成功
     socket.on('host-resume-success', (data) => {
         authOverlay.style.opacity = '0';
         setTimeout(() => authOverlay.remove(), 500);
@@ -181,11 +190,9 @@ if (isHostPage) {
         showToast('歡迎回來，會議連線已恢復');
     });
 
-    // [新增] 恢復失敗 (會議已結束或不存在)
     socket.on('host-resume-fail', () => {
         localStorage.removeItem('vote_host_pin');
         localStorage.removeItem('vote_host_name');
-        // 重新整理頁面以顯示建立表單
         location.reload();
     });
 
@@ -239,7 +246,6 @@ if (isHostPage) {
         if(confirm('確定要結束會議？這將強制所有人退出。')) {
             socket.emit('request-export');
             socket.emit('terminate-meeting');
-            // [新增] 結束後清除 Host 紀錄
             localStorage.removeItem('vote_host_pin');
             localStorage.removeItem('vote_host_name');
         }
