@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>即時投票</title>
+    
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,7 +36,7 @@
 
         <div id="vote-screen" class="hidden">
             <div style="text-align: right; margin-bottom: 10px;">
-                <button id="leave-btn" style="background: transparent; border: none; color: var(--text-light); padding: 5px 10px; cursor: pointer; font-size: 0.8rem;">🏃 離開會議</button>
+                <button id="leave-btn" style="background: transparent; border: none; color: var(--text-light); padding: 5px 10px; cursor: pointer; font-size: 0.8rem;">🏃 登出離開</button>
             </div>
 
             <div class="status-bar">
@@ -50,6 +54,8 @@
             <p style="text-align:center; font-size:0.85rem; color:var(--text-light); margin-top:30px; font-family:'Noto Serif TC'; opacity:0.8;">
                 ❧ 投票結束前可隨時修改
             </p>
+
+            <button onclick="location.href='index.html'" class="btn" style="background:transparent; border:1px solid var(--border); color:var(--text-light); margin-top:30px;">🏠 回首頁 (保持連線)</button>
         </div>
     </div>
     
