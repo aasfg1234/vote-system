@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統管理後台</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        .admin-card { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .mt-list-item { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr auto; gap: 10px; align-items: center; padding: 15px; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+        .mt-list-header { font-weight: bold; background: #faf9f6; border-bottom: 2px solid var(--border); }
+        .status-tag { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .status-waiting { background: #e2e8f0; color: #475569; }
+        .status-voting { background: #dcfce7; color: #166534; }
+        .status-ended { background: #fee2e2; color: #991b1b; }
+        .timeout-control { display: flex; align-items: center; gap: 5px; }
+        .timeout-input { width: 50px; padding: 4px; text-align: center; border: 1px solid #ccc; border-radius: 4px; }
+    </style>
+</head>
+<body id="admin-page">
+    
+    <div id="admin-auth-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-paper); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="container" style="max-width:400px; text-align:center; padding:50px;">
+            <div style="font-size:3rem; margin-bottom:20px;">🛡️</div>
+            <h2 style="margin-bottom:10px;">管理員登入</h2>
+            <p style="color:var(--text-light); margin-bottom:30px;">Default: 8888</p>
+            <input type="password" id="admin-password-input" placeholder="Password" style="text-align:center; letter-spacing:3px; font-size:1.2rem; margin-bottom:20px;">
+            <button id="admin-login-submit" class="btn">進入後台</button>
+            <p id="login-error-msg" style="color:var(--danger); margin-top:15px; opacity:0; transition:opacity 0.3s;">密碼錯誤</p>
+            <a href="index.html" style="display:block; margin-top:30px; color:var(--text-light); text-decoration:none; font-size:0.9rem;">← 返回首頁</a>
+        </div>
+    </div>
+
+    <div class="container" style="max-width: 1000px; margin-top: 40px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+            <h1>系統管理後台</h1>
+            <div style="text-align: right;">
+                <p style="color: var(--text-light); font-size: 0.9rem;">Server Status: Online</p>
+                <button onclick="location.href='index.html'" style="background:none; border:none; color:var(--primary); cursor:pointer;">登出</button>
+            </div>
+        </div>
+
+        <div class="admin-card">
+            <h2 style="margin-bottom: 20px; font-size: 1.2rem;">📡 進行中的會議</h2>
+            <div id="meeting-list-container">
+                <div class="mt-list-item mt-list-header">
+                    <div>PIN</div>
+                    <div>會議名稱</div>
+                    <div>狀態</div>
+                    <div>線上人數</div>
+                    <div>閒置關閉</div>
+                    <div>操作</div>
+                </div>
+                <div id="meeting-list-body">
+                    <p style="text-align:center; padding: 20px; color: #999;">讀取中...</p>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="admin-card">
+                <h3 style="margin-bottom: 15px;">🔑 修改管理員密碼</h3>
+                <input type="text" id="new-admin-pwd" placeholder="輸入新密碼" style="margin-bottom: 10px;">
+                <button id="change-admin-pwd-btn" class="btn" style="width: auto; padding: 10px 20px;">更新密碼</button>
+            </div>
+
+            <div class="admin-card">
+                <h3 style="margin-bottom: 15px;">📝 新增全域快速模板</h3>
+                <input type="text" id="g-preset-name" placeholder="模板名稱" style="margin-bottom: 5px;">
+                <input type="text" id="g-preset-q" placeholder="題目" style="margin-bottom: 5px;">
+                <input type="text" id="g-preset-opt" placeholder="選項 (逗號分隔)" style="margin-bottom: 10px;">
+                <button id="add-global-preset-btn" class="btn" style="width: auto; padding: 10px 20px; background: var(--success);">新增模板</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
