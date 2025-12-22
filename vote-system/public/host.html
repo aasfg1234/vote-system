@@ -6,7 +6,7 @@
     <title>主持人控制台</title>
     
     <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
-    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
 
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,7 +26,7 @@
             <input type="text" id="host-name-input" placeholder="例如：週五例會" style="text-align:center; font-size:1.2rem; margin-bottom:20px;">
             
             <button id="create-meeting-btn" class="btn">立即建立</button>
-            <a href="index.html" style="display:block; margin-top:30px; color:var(--text-light); text-decoration:none; font-size:0.9rem;">← 返回首頁</a>
+            <button onclick="location.href='index.html?skip=1'" class="btn" style="background:transparent; border:none; color:var(--text-light); margin-top:10px; box-shadow:none;">← 返回首頁</button>
         </div>
     </div>
 
@@ -128,7 +128,7 @@
                     </div>
                 </div>
 
-                <button onclick="location.href='index.html'" class="btn" style="background:transparent; border:1px solid var(--border); color:var(--text-light); margin-top:40px;">🏠 回首頁 (不結束會議)</button>
+                <button onclick="location.href='index.html?skip=1'" class="btn" style="background:transparent; border:1px solid var(--border); color:var(--text-light); margin-top:40px;">🏠 回首頁 (不結束會議)</button>
             </div>
         </div>
 
