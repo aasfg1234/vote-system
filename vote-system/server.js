@@ -30,15 +30,14 @@ let meetingState = {
     timer: null,
     endTime: null,
     voteId: 0,
-    hasArchived: false // ✨ 新增：防止重複歸檔的旗標
+    hasArchived: false
 };
 
 let meetingHistory = []; 
 const voterRecords = new Map();
 
-// --- 歸檔功能 (修改：加入防呆檢查) ---
+// --- 歸檔功能 ---
 function archiveCurrentVote() {
-    // 如果沒有題目，或是已經歸檔過了，就跳過
     if (!meetingState.question || meetingState.hasArchived) return;
 
     const snapshot = {
@@ -57,12 +56,19 @@ function archiveCurrentVote() {
     });
     snapshot.totalVotes = total;
     meetingHistory.push(snapshot);
+    meetingState.hasArchived = true;
     
-    // 標記為已歸檔
-    meetingState.hasArchived = true; 
+    // ✨ 優化：歸檔後，主動廣播歷史紀錄更新 (只給主持人)
+    broadcastHistory();
 }
 
-// --- 廣播狀態 ---
+// --- ✨ 優化：獨立的歷史紀錄廣播函式 ---
+function broadcastHistory() {
+    // 只有主持人房間需要收到歷史紀錄，節省與會者的流量
+    io.to('host-room').emit('history-update', meetingHistory);
+}
+
+// --- 廣播狀態 (已移除 history) ---
 function broadcastState() {
     let totalVotes = 0;
     meetingState.options.forEach(opt => opt.count = 0);
@@ -121,11 +127,11 @@ function broadcastState() {
         voteId: meetingState.voteId
     };
 
+    // ✨ 優化：這裡不再傳送 history，封包變小了
     io.to('host-room').emit('state-update', { 
         ...basePayload, 
         options: fullOptions,
         hostVoterMap: hostVoterMap, 
-        history: meetingHistory,
         presets: presets 
     });
 
@@ -190,6 +196,10 @@ io.on('connection', (socket) => {
             socket.join('meeting-room'); 
             
             socket.emit('host-login-success', { pin: meetingState.pin, hostName: hostName });
+            
+            // ✨ 優化：主持人登入時，立刻補發一次歷史紀錄給他
+            socket.emit('history-update', meetingHistory);
+            
             broadcastState(); 
         } else {
             socket.emit('host-login-fail');
@@ -212,16 +222,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('start-vote', (data) => {
-        // 先嘗試歸檔上一題 (如果還沒歸檔的話)
         archiveCurrentVote();
-        
         resetVotes();
         meetingState.status = 'voting';
         meetingState.question = data.question;
         meetingState.settings.allowMulti = data.allowMulti;
         meetingState.settings.blindMode = data.blindMode;
         meetingState.voteId = Date.now(); 
-        meetingState.hasArchived = false; // ✨ 重置：新題目還沒歸檔
+        meetingState.hasArchived = false;
         
         meetingState.options = data.options.map((opt, index) => ({
             id: index,
@@ -251,17 +259,12 @@ io.on('connection', (socket) => {
         if (meetingState.timer) clearInterval(meetingState.timer);
         meetingState.status = 'ended';
         meetingState.endTime = null;
-        
-        // ✨ 關鍵修改：停止投票時，立刻執行歸檔
-        archiveCurrentVote();
-        
+        archiveCurrentVote(); 
         broadcastState();
     }
 
     socket.on('terminate-meeting', () => {
-        // 嘗試歸檔 (利用 hasArchived 旗標避免重複)
         archiveCurrentVote();
-        
         if (meetingState.timer) clearInterval(meetingState.timer);
         meetingState.status = 'terminated';
         meetingState.question = '';
@@ -274,9 +277,7 @@ io.on('connection', (socket) => {
         const votes = data.votes;
         const username = data.username;
         
-        if (socket.rooms.has('host-room')) {
-            return;
-        }
+        if (socket.rooms.has('host-room')) return;
 
         if (!username) return; 
         voterRecords.set(username, Array.isArray(votes) ? votes : [votes]);
