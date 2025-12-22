@@ -1,33 +1,67 @@
-/* --- RWD 手機版設定 (手機預覽置頂、控制台在下) --- */
+/* --- 手機外框 (升級為 Pro Max 尺寸) --- */
+.phone-mockup {
+    width: 412px;  /* 加大：原本 360px */
+    height: 860px; /* 加大：原本 720px */
+    background: #1a1a1a;
+    border-radius: 55px; /* 圓角更圓潤 */
+    padding: 14px; /* 邊框加厚一點更有質感 */
+    box-shadow: 
+        0 0 0 2px #333,
+        0 30px 60px rgba(0,0,0,0.5); /* 陰影加深，增加立體感 */
+    position: relative;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease; /* 讓調整視窗時平滑一點 */
+}
+
+/* 瀏海 (配合變大) */
+.phone-notch {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    width: 140px; /* 變寬 */
+    height: 30px;
+    background: #1a1a1a;
+    border-bottom-left-radius: 20px;
+    border-bottom-right-radius: 20px;
+    z-index: 5;
+}
+
+/* 螢幕圓角微調 */
+.phone-screen {
+    width: 100%; height: 100%;
+    background: #fff;
+    border-radius: 42px; /* 配合外框調整 */
+    overflow: hidden;
+    position: relative;
+}
+
+/* --- RWD 與版面配置 (配合手機變大) --- */
+.host-grid { 
+    display: grid; 
+    grid-template-columns: 1fr 500px; /* 右側欄位加寬：原本 450px -> 500px */
+    gap: 40px; 
+    width: 100%; 
+    max-width: 98vw; 
+    height: 95vh;
+    padding-bottom: 20px; /* 避免底部太貼 */
+}
+
+/* 針對筆電螢幕高度不足時的自動縮放 */
+@media (max-height: 900px) {
+    .phone-mockup {
+        transform: scale(0.85); /* 自動縮小以免超出螢幕 */
+        transform-origin: top center;
+        margin-bottom: -100px; /* 修正縮放後的版面留白 */
+    }
+}
+
 @media (max-width: 1100px) { 
     .host-grid { 
-        display: flex; /* 改用 Flex 以確保直向排列順序穩定 */
-        flex-direction: column;
+        grid-template-columns: 1fr; 
         height: auto; 
     } 
-    
     .phone-mockup { 
         margin: 20px auto;
-        transform: scale(0.9); /* 手機版稍微縮小一點以免太佔位 */
-    }
-
-    /* 預覽畫面區塊 */
-    .preview-container {
-        /* 原本的全域設定 order: -1 在這裡會繼續生效，
-           所以預覽畫面會自動排在最上面 (Top)。
-        */
-        padding: 0;
-        margin-bottom: 30px; /* 距離下方的控制台留點空隙 */
-        border-bottom: 1px dashed var(--border); /* 分隔線改在下方 */
-        padding-bottom: 30px;
-        
-        /* 移除原本的 margin-top 和 border-top */
-        margin-top: 0; 
-        border-top: none;
-    }
-    
-    /* 控制台區塊 */
-    .container {
-        order: 1; /* 確保控制台在下方 */
+        transform: scale(1); /* 手機版還原比例 */
     }
 }
