@@ -4,55 +4,65 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>會議投票系統</title>
+    
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+
     <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;900&display=swap" rel="stylesheet">
-    <style>
-        .portal-container { width: 100%; max-width: 500px; text-align: center; }
-        .role-card {
-            background: #fff; border: 1px solid var(--border);
-            padding: 30px; margin-bottom: 20px; border-radius: 4px;
-            cursor: pointer; transition: all 0.3s; text-decoration: none;
-            display: block; color: var(--text-main);
-        }
-        .role-card:hover { border-color: var(--primary); box-shadow: 0 4px 15px rgba(0,0,0,0.05); transform: translateY(-3px); }
-        .role-icon { font-size: 3rem; margin-bottom: 15px; display: block; }
-        .role-title { font-family: 'Noto Serif TC'; font-size: 1.5rem; font-weight: 600; margin-bottom: 5px; display: block; }
-        .role-desc { font-size: 0.9rem; color: var(--text-light); display: block; }
-    </style>
-    <script>
-        const storedPin = localStorage.getItem('vote_pin');
-        const storedName = localStorage.getItem('vote_username');
-        if (storedPin && storedName) {
-            window.location.href = 'participant.html';
-        }
-    </script>
-</head>
-<body id="portal-page">
-    <div class="container portal-container">
-        <h1 style="margin-bottom: 10px;">歡迎使用</h1>
-        <p style="margin-bottom: 40px; color: var(--text-light); font-family: 'Noto Serif TC';">請選擇您的身份進入系統</p>
+    ```
 
-        <a href="participant.html" class="role-card">
-            <span class="role-icon">📱</span>
-            <span class="role-title">我是與會者</span>
-            <span class="role-desc">輸入 PIN 碼參與投票</span>
-        </a>
+### 2. public/host.html (主持人頁面)
 
-        <a href="host.html" class="role-card">
-            <span class="role-icon">🆕</span>
-            <span class="role-title">新增會議室</span>
-            <span class="role-desc">建立一個新的投票房間</span>
-        </a>
-        
-        <a href="admin.html" class="role-card" style="border-style: dashed; opacity: 0.8;">
-            <span class="role-icon">🛡️</span>
-            <span class="role-title">我是管理員</span>
-            <span class="role-desc">系統後台管理</span>
-        </a>
-        
-        <p style="font-size: 0.8rem; color: #cbd5e1; margin-top: 30px;">Literary Vote System v3.0</p>
-    </div>
-</body>
-</html>
+同樣在 `<head>` 裡加入：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主持人控制台</title>
+
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+
+    <link rel="stylesheet" href="style.css">
+    ```
+
+### 3. public/participant.html (與會者頁面)
+
+一樣加入 `<head>`：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即時投票</title>
+
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+
+    <link rel="stylesheet" href="style.css">
+    ```
+
+### 4. public/admin.html (管理員後台)
+
+最後是管理員頁面的 `<head>`：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統管理後台</title>
+
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+
+    <link rel="stylesheet" href="style.css">
+    ```
+
+完成後，當您再次在手機上進行「加入主畫面」的操作時，就會看到新的質感圖標了！
