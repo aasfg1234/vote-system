@@ -1,308 +1,33 @@
-:root {
-    --bg-paper: #fdfbf7;
-    --card-bg: #ffffff;
-    --primary: #5e644e; /* 更深沉的墨綠 */
-    --primary-hover: #4a503b;
-    --accent: #d4af37; /* 金色 */
-    --text-main: #2c2c2c; /* 近黑 */
-    --text-light: #949494;
-    --border: #e8e6dc;
-    --shadow-ambient: rgba(60, 64, 50, 0.08);
-    --shadow-depth: rgba(60, 64, 50, 0.12);
-    --success: #789c80;
-    --danger: #c45a45;
+/* --- RWD 手機版設定 (手機預覽置頂、控制台在下) --- */
+@media (max-width: 1100px) { 
+    .host-grid { 
+        display: flex; /* 改用 Flex 以確保直向排列順序穩定 */
+        flex-direction: column;
+        height: auto; 
+    } 
     
-    /* 動效曲線 */
-    --ease-fluid: cubic-bezier(0.34, 1.56, 0.64, 1); /* Q彈感 */
-    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
-}
+    .phone-mockup { 
+        margin: 20px auto;
+        transform: scale(0.9); /* 手機版稍微縮小一點以免太佔位 */
+    }
 
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-
-html { font-size: 16px; }
-
-body {
-    background-color: var(--bg-paper);
-    color: var(--text-main);
-    font-family: 'Noto Sans TC', sans-serif;
-    padding: 40px 20px;
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    /* 加入一點點噪點質感 */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+    /* 預覽畫面區塊 */
+    .preview-container {
+        /* 原本的全域設定 order: -1 在這裡會繼續生效，
+           所以預覽畫面會自動排在最上面 (Top)。
+        */
+        padding: 0;
+        margin-bottom: 30px; /* 距離下方的控制台留點空隙 */
+        border-bottom: 1px dashed var(--border); /* 分隔線改在下方 */
+        padding-bottom: 30px;
+        
+        /* 移除原本的 margin-top 和 border-top */
+        margin-top: 0; 
+        border-top: none;
+    }
+    
+    /* 控制台區塊 */
+    .container {
+        order: 1; /* 確保控制台在下方 */
+    }
 }
-
-h1, h2, .question, .role-title, .history-title {
-    font-family: 'Noto Serif TC', serif;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-}
-
-/* --- 容器與基礎 --- */
-.container {
-    width: 100%; max-width: 600px;
-    background: var(--card-bg);
-    padding: 40px;
-    border-radius: 8px; /* 稍微圓潤 */
-    /* 物理觸感：更紮實的陰影 */
-    box-shadow: 
-        0 2px 4px var(--shadow-ambient),
-        0 8px 24px -4px var(--shadow-depth);
-    border: 1px solid rgba(0,0,0,0.03);
-    position: relative;
-    transition: transform 0.3s var(--ease-smooth);
-}
-
-/* --- 表單元件 --- */
-input[type="number"], input[type="text"], input[type="password"] {
-    width: 100%; padding: 14px;
-    border: 1px solid var(--border);
-    background: #fafaf9;
-    border-radius: 4px;
-    color: var(--text-main);
-    font-family: 'Noto Sans TC';
-    font-size: 1rem;
-    transition: all 0.3s;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
-}
-input:focus { 
-    outline: none; 
-    border-color: var(--primary); 
-    background: #fff; 
-    box-shadow: 0 0 0 3px rgba(94, 100, 78, 0.1);
-}
-input[type="number"] { font-family: 'Noto Serif TC'; letter-spacing: 2px; text-align: center; font-size: 1.5rem;}
-
-.btn {
-    display: block; width: 100%; padding: 16px;
-    font-size: 1rem; border: none;
-    border-radius: 4px; cursor: pointer;
-    background: var(--primary); color: #fff;
-    font-family: 'Noto Serif TC'; letter-spacing: 0.1em;
-    font-weight: 600;
-    transition: all 0.2s var(--ease-smooth);
-    margin-top: 15px;
-    box-shadow: 0 4px 6px rgba(94, 100, 78, 0.2);
-}
-.btn:hover { 
-    background: var(--primary-hover); 
-    transform: translateY(-2px); 
-    box-shadow: 0 6px 12px rgba(94, 100, 78, 0.3); 
-}
-.btn:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(94, 100, 78, 0.2); }
-
-.btn-stop { background: white; border: 1px solid var(--danger); color: var(--danger); box-shadow: none; }
-.btn-stop:hover { background: var(--danger); color: white; }
-
-.status-bar {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 35px; padding-bottom: 15px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-light); font-family: 'Noto Serif TC'; font-size: 0.9rem;
-}
-
-/* --- 雜誌風格排版 --- */
-.question { 
-    font-size: 1.8rem; 
-    margin-bottom: 40px; 
-    text-align: center; 
-    line-height: 1.4;
-    color: var(--text-main);
-}
-
-/* --- 選項卡片 (物理觸感 + 雜誌風) --- */
-.option-card {
-    position: relative; 
-    background: #fff; 
-    border-radius: 6px;
-    padding: 20px 24px; 
-    margin-bottom: 16px;
-    cursor: pointer; 
-    transition: all 0.4s var(--ease-smooth);
-    overflow: hidden;
-    /* 卡片立體感 */
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05), 0 1px 1px rgba(0,0,0,0.03);
-    border: 1px solid transparent; /* 預留邊框 */
-}
-
-/* Hover 浮起 */
-.option-card:hover { 
-    transform: translateY(-2px);
-    box-shadow: 0 8px 15px rgba(0,0,0,0.08);
-}
-/* Active 按壓觸感 */
-.option-card:active {
-    transform: scale(0.98) translateY(0);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-/* 選中狀態 */
-.option-card.selected { 
-    border: 1px solid var(--primary); 
-    background: #fdfdfc;
-}
-
-/* 進度條 (流動動效) */
-.progress-bg {
-    position: absolute; top: 0; left: 0; bottom: 0; z-index: 0;
-    transition: width 0.8s var(--ease-fluid); /* 使用 Q 彈曲線 */
-    opacity: 0.12;
-    background-color: var(--text-light); /* 預設灰 */
-}
-
-/* 卡片內容佈局 (Flex) */
-.option-content { 
-    position: relative; z-index: 1; 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
-}
-.option-text { 
-    font-size: 1.15rem; 
-    font-weight: 500; 
-    color: var(--text-main);
-    flex: 1;
-    padding-right: 15px;
-}
-
-/* 雜誌風格大數字 */
-.opt-percent {
-    font-family: 'Noto Serif TC', serif;
-    font-weight: 900;
-    font-size: 1.8rem;
-    color: var(--text-main);
-    min-width: 80px;
-    text-align: right;
-    font-feature-settings: "tnum"; /* 等寬數字 */
-}
-.opt-count {
-    font-size: 0.8rem;
-    color: var(--text-light);
-    display: block;
-    text-align: right;
-    margin-top: -4px;
-    font-weight: 400;
-}
-
-/* --- 戲劇化揭曉 (Spotlight Effect) --- */
-#options-container.reveal-mode .option-card {
-    transition: all 0.6s ease;
-}
-
-/* 失敗者模糊化 */
-#options-container.reveal-mode .option-card.loser-card {
-    opacity: 0.4;
-    filter: grayscale(100%) blur(1px);
-    transform: scale(0.98);
-    pointer-events: none;
-    box-shadow: none;
-}
-
-/* 勝利者聚光燈 */
-.option-card.winner-card {
-    background: #fff !important;
-    border: 2px solid var(--accent) !important;
-    transform: scale(1.03) !important;
-    box-shadow: 0 15px 40px rgba(212, 175, 55, 0.25) !important; /* 金色光暈 */
-    z-index: 10;
-    opacity: 1 !important;
-    filter: none !important;
-}
-
-.winner-icon {
-    position: absolute; left: -8px; top: -12px;
-    font-size: 2rem; 
-    z-index: 20; 
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
-    animation: bounceIn 0.6s var(--ease-fluid);
-}
-
-@keyframes bounceIn {
-    0% { transform: scale(0); opacity: 0; }
-    50% { transform: scale(1.2); }
-    100% { transform: scale(1); opacity: 1; }
-}
-
-/* --- 手機外框 (Pure CSS Phone Mockup) --- */
-.phone-mockup {
-    width: 360px;
-    height: 720px;
-    background: #1a1a1a;
-    border-radius: 40px;
-    padding: 12px; /* 邊框厚度 */
-    box-shadow: 
-        0 0 0 2px #333, /* 外殼光澤 */
-        0 20px 40px rgba(0,0,0,0.4);
-    position: relative;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-}
-/* 瀏海 */
-.phone-notch {
-    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-    width: 120px; height: 25px;
-    background: #1a1a1a;
-    border-bottom-left-radius: 16px;
-    border-bottom-right-radius: 16px;
-    z-index: 5;
-}
-/* 螢幕 */
-.phone-screen {
-    width: 100%; height: 100%;
-    background: #fff;
-    border-radius: 30px;
-    overflow: hidden;
-    position: relative;
-}
-.phone-screen iframe {
-    width: 100%; height: 100%; border: none;
-    display: block;
-}
-
-/* --- RWD 與其他 --- */
-.host-grid { 
-    display: grid; 
-    grid-template-columns: 1fr 450px; /* 右側留給手機 */
-    gap: 40px; 
-    width: 100%; max-width: 1400px; 
-    height: 90vh;
-}
-.preview-container {
-    padding: 20px;
-    background: transparent;
-    box-shadow: none;
-    border: none;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-@media (max-width: 1000px) { 
-    .host-grid { grid-template-columns: 1fr; height: auto; }
-    .phone-mockup { transform: scale(0.8); margin: -40px auto; }
-}
-
-/* 印章動畫 */
-@keyframes stamp-in {
-    0% { transform: scale(3) rotate(15deg); opacity: 0; }
-    40% { transform: scale(0.9) rotate(-5deg); opacity: 1; }
-    100% { transform: scale(1) rotate(-2deg); opacity: 0.8; }
-}
-.stamp-mark {
-    position: absolute; right: 20px; top: 50%;
-    transform: translateY(-50%) rotate(-2deg);
-    border: 3px solid var(--danger); 
-    color: var(--danger);
-    font-family: 'Noto Serif TC'; font-weight: 900;
-    font-size: 1rem; padding: 4px 10px; border-radius: 4px;
-    opacity: 0.8; background: rgba(255, 250, 240, 0.9);
-    pointer-events: none; z-index: 10;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    animation: stamp-in 0.3s forwards;
-    display: none;
-}
-
-/* 隱藏樣式 (工具類) */
-.hidden { display: none !important; }
