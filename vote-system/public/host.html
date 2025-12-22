@@ -7,16 +7,12 @@
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Noto+Serif+TC:wght@400;600;700;900&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body id="host-page">
-    <div class="font-control-box">
-        <button id="font-up" class="font-btn" title="放大字體">A+</button>
-        <button id="font-down" class="font-btn" title="縮小字體">A-</button>
-    </div>
-
+    
     <div id="host-auth-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-paper); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center;">
         <div class="container" style="max-width:400px; text-align:center; padding:50px;">
             <div style="font-size:3rem; margin-bottom:20px;">🔒</div>
@@ -31,21 +27,18 @@
 
     <div id="settings-modal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:5000; display:flex; justify-content:center; align-items:center;">
         <div class="container" style="max-width:500px; padding:30px; position:relative; max-height: 90vh; overflow-y: auto;">
-            <button id="close-settings-btn" style="position:absolute; top:15px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+            <button id="close-settings-btn" style="position:absolute; top:15px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer;">×</button>
             <h2 style="margin-bottom:20px; text-align:center;">⚙️ 系統設定</h2>
-
             <div style="border-bottom:1px dashed var(--border); padding-bottom:20px; margin-bottom:20px;">
                 <h3 style="font-size:1.1rem; margin-bottom:10px;">👤 修改主持人暱稱</h3>
                 <input type="text" id="new-host-name" placeholder="預設: HOST" style="margin-bottom:10px;">
                 <button id="save-host-name-btn" class="btn" style="background:var(--primary); color:white;">儲存暱稱</button>
             </div>
-
             <div style="border-bottom:1px dashed var(--border); padding-bottom:20px; margin-bottom:20px;">
                 <h3 style="font-size:1.1rem; margin-bottom:10px;">🔑 修改主持人密碼</h3>
                 <input type="text" id="new-host-password" placeholder="輸入新密碼" style="margin-bottom:10px;">
                 <button id="save-password-btn" class="btn" style="background:var(--text-main); color:white;">儲存新密碼</button>
             </div>
-
             <div>
                 <h3 style="font-size:1.1rem; margin-bottom:10px;">➕ 新增快速樣板</h3>
                 <input type="text" id="new-preset-name" placeholder="樣板名稱 (如: 👔 穿搭題)" style="margin-bottom:8px;">
@@ -58,32 +51,27 @@
 
     <div class="host-grid">
         
-        <div class="container preview-container">
-            <div style="padding: 15px 20px; border-bottom: 1px solid var(--border); background:#fcfcfc;">
-                <h2 style="margin:0; font-size:1.3rem;">📱 您的與會者畫面</h2>
-            </div>
-            <iframe src="participant.html?clean=true" style="width:100%; border:none; flex:1; background:var(--bg-paper);"></iframe>
-        </div>
-
         <div class="container" style="display:flex; flex-direction:column; height: 100%; overflow-y: auto;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2 style="margin:0;">🎛 控制面板</h2>
                 <button id="open-settings-btn" style="background:none; border:none; font-size:1.5rem; cursor:pointer;" title="設定">⚙️</button>
             </div>
             
-            <div class="pin-badge">PIN: <span id="host-pin-display">----</span></div>
+            <div class="pin-badge" style="background: var(--text-main); color: #fff; padding: 4px 12px; font-family: 'Noto Serif TC'; border-radius: 50px; display: inline-block; margin-bottom: 20px;">
+                PIN: <span id="host-pin-display">----</span>
+            </div>
             
             <div class="host-controls">
                 <div class="form-group">
-                    <label>快速樣板：</label>
+                    <label style="display:block; margin-bottom:5px; color:var(--text-light);">快速樣板：</label>
                     <div id="preset-buttons" style="display:flex; gap:8px; margin-bottom:15px; flex-wrap:wrap;"></div>
                     
-                    <label>題目</label>
+                    <label style="display:block; margin-bottom:5px; font-weight:bold;">題目</label>
                     <input type="text" id="h-question" placeholder="請輸入討論議題..." value="範例：接下來的優先順序？">
                 </div>
                 
-                <div class="form-group">
-                    <label>選項</label>
+                <div class="form-group" style="margin-top:15px;">
+                    <label style="display:block; margin-bottom:5px; font-weight:bold;">選項</label>
                     <input type="text" class="opt-text" value="選項 A" style="margin-bottom:8px;">
                     <input type="text" class="opt-text" value="選項 B" style="margin-bottom:8px;">
                     <input type="text" class="opt-text" value="選項 C" style="margin-bottom:8px;">
@@ -96,18 +84,18 @@
                         <input type="number" id="h-timer" value="0">
                     </div>
                     <div style="flex:1; display:flex; align-items:center; padding-top:25px;">
-                        <input type="checkbox" id="h-multi" style="margin-right:5px;">
+                        <input type="checkbox" id="h-multi" style="margin-right:5px; transform: scale(1.2);">
                         <label for="h-multi">複選</label>
                     </div>
                     <div style="flex:1; display:flex; align-items:center; padding-top:25px;">
-                        <input type="checkbox" id="h-blind" style="margin-right:5px;">
+                        <input type="checkbox" id="h-blind" style="margin-right:5px; transform: scale(1.2);">
                         <label for="h-blind" style="color:var(--primary); font-weight:bold;">🙈 盲測</label>
                     </div>
                 </div>
 
-                <div style="display:flex; gap:10px; margin-top:20px;">
-                    <button id="clear-form-btn" class="btn" style="background:#8e8d8a; flex:1;">🧹 清空</button>
-                    <button id="start-vote-btn" class="btn" style="flex:2;">🚀 發布</button>
+                <div style="display:flex; gap:10px; margin-top:25px;">
+                    <button id="clear-form-btn" class="btn" style="background:#8e8d8a; flex:1; margin-top:0;">🧹 清空</button>
+                    <button id="start-vote-btn" class="btn" style="flex:2; margin-top:0;">🚀 發布</button>
                 </div>
                 <button id="stop-vote-btn" class="btn btn-stop">🛑 結束投票</button>
                 
@@ -130,12 +118,22 @@
                 <button id="export-btn" class="btn" style="background:var(--success); margin-top:10px;">📥 下載結果 (CSV)</button>
 
                 <div class="history-section" style="margin-top: 40px; padding-top: 20px; border-top: 2px dashed var(--border);">
-                    <h3 style="font-family:'Noto Serif TC'; margin-bottom:10px; color:var(--text-light); font-size:1rem;">🗄️ 會議歷史紀錄</h3>
+                    <h3 style="margin-bottom:10px; color:var(--text-light); font-size:1rem;">🗄️ 會議歷史紀錄</h3>
                     <div id="history-container">
                         <p style="text-align:center; color:#ccc; font-size:0.8rem;">尚未有歸檔紀錄</p>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="preview-container">
+            <div class="phone-mockup">
+                <div class="phone-notch"></div>
+                <div class="phone-screen">
+                    <iframe src="participant.html?clean=true" style="width:100%; height:100%; border:none;"></iframe>
+                </div>
+            </div>
+            <p style="text-align:center; margin-top:15px; color:var(--text-light); font-size:0.9rem; font-family:'Noto Serif TC'">Live Participant View</p>
         </div>
     </div>
 
