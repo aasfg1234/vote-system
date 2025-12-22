@@ -1,3 +1,4 @@
+require('dotenv').config(); // [安全] 載入環境變數
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -9,9 +10,49 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- 全域設定 ---
-let adminPassword = '8888'; // 管理員密碼
-const DEFAULT_TIMEOUT = 3 * 60 * 60 * 1000; // 預設 3 小時 (毫秒)
+// --- [安全] 全域設定 (從環境變數讀取) ---
+// 如果沒有設定環境變數，預設密碼為 8888
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '8888'; 
+const PORT = process.env.PORT || 3000;
+// 預設 3 小時 (毫秒)
+const DEFAULT_TIMEOUT = parseInt(process.env.TIMEOUT_DURATION) || 3 * 60 * 60 * 1000;
+
+// --- [安全] 速率限制器 (簡易版 In-Memory) ---
+// 防止暴力破解密碼或惡意建立大量會議
+class RateLimiter {
+    constructor(limit, windowMs) {
+        this.requests = new Map(); // IP -> { count, startTime }
+        this.limit = limit;
+        this.windowMs = windowMs;
+    }
+
+    check(ip) {
+        const now = Date.now();
+        const record = this.requests.get(ip);
+
+        if (!record) {
+            this.requests.set(ip, { count: 1, startTime: now });
+            return true;
+        }
+
+        if (now - record.startTime > this.windowMs) {
+            // 時間視窗已過，重置
+            this.requests.set(ip, { count: 1, startTime: now });
+            return true;
+        }
+
+        if (record.count >= this.limit) {
+            return false; // 超過限制
+        }
+
+        record.count++;
+        return true;
+    }
+}
+
+// 設定限制：每分鐘最多 5 次登入嘗試，每分鐘最多建立 10 個會議
+const loginLimiter = new RateLimiter(5, 60 * 1000); 
+const createLimiter = new RateLimiter(10, 60 * 1000);
 
 // --- 資料結構 ---
 // Key: pin (String), Value: Meeting Object
@@ -24,11 +65,18 @@ let globalPresets = [
     { name: "🍱 午餐題", question: "今天午餐想吃什麼類別？", options: ["🍱 便當/自助餐", "🍜 麵食/水餃", "🍔 速食", "🥗 輕食/沙拉"] }
 ];
 
-// --- 輔助函式 ---
+// --- [安全] 輸入驗證輔助函式 ---
+function isValidString(str, maxLength = 100) {
+    return typeof str === 'string' && str.trim().length > 0 && str.length <= maxLength;
+}
+
 function createMeetingState(pin, hostName) {
+    // 確保 hostName 不會過長
+    const safeHostName = isValidString(hostName, 50) ? hostName : 'HOST';
+    
     return {
         pin: pin,
-        hostName: hostName || 'HOST',
+        hostName: safeHostName,
         status: 'waiting', 
         question: '',
         options: [], 
@@ -204,10 +252,16 @@ function broadcastAdminList() {
 
 // --- Socket 連線 ---
 io.on('connection', (socket) => {
-    
+    // [安全] 取得 IP 位址 (考慮代理伺服器情況，Render/Heroku 需要 x-forwarded-for)
+    const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
+
     // 1. 與會者加入
     socket.on('join', (data) => {
-        const { pin, username, deviceId } = data;
+        // [安全] 基本資料驗證
+        if (!data || !data.pin || !data.username) return;
+        const pin = String(data.pin).substring(0, 4); // 強制截斷
+        const username = String(data.username).substring(0, 20);
+
         const meeting = meetings.get(pin);
 
         if (!meeting) {
@@ -225,8 +279,8 @@ io.on('connection', (socket) => {
         touchMeeting(meeting);
 
         socket.emit('joined', { success: true });
-        if (deviceId && meeting.status === 'voting') {
-            const record = meeting.voterRecords.get(deviceId);
+        if (data.deviceId && meeting.status === 'voting') {
+            const record = meeting.voterRecords.get(data.deviceId);
             if (record) socket.emit('vote-confirmed', record.votes);
         }
         broadcastState(meeting);
@@ -235,6 +289,12 @@ io.on('connection', (socket) => {
 
     // 2. 建立新會議室
     socket.on('create-meeting', (hostName) => {
+        // [安全] 速率限制檢查
+        if (!createLimiter.check(clientIp)) {
+            // 可以選擇發送錯誤訊息給前端，這裡簡單處理
+            return; 
+        }
+
         const newPin = generateUniquePin();
         const newMeeting = createMeetingState(newPin, hostName);
         meetings.set(newPin, newMeeting);
@@ -250,7 +310,7 @@ io.on('connection', (socket) => {
         broadcastAdminList();
     });
 
-    // [新增] 3. 主持人恢復連線 (Resume)
+    // 3. 主持人恢復連線 (Resume)
     socket.on('host-resume', (pin) => {
         const meeting = meetings.get(pin);
         if (meeting && meeting.status !== 'terminated') {
@@ -282,23 +342,32 @@ io.on('connection', (socket) => {
         if (!meeting || !socket.data.isHost) return;
         touchMeeting(meeting);
 
+        // [安全] 驗證選項數量
+        if (!Array.isArray(data.options) || data.options.length < 2) return;
+
         archiveCurrentVote(meeting);
         meeting.voterRecords.clear();
         meeting.options.forEach(o => o.count = 0);
         
         meeting.status = 'voting';
-        meeting.question = data.question;
-        meeting.settings.allowMulti = data.allowMulti;
-        meeting.settings.blindMode = data.blindMode;
+        // [安全] 截斷過長的文字
+        meeting.question = String(data.question).substring(0, 200);
+        meeting.settings.allowMulti = !!data.allowMulti;
+        meeting.settings.blindMode = !!data.blindMode;
         meeting.voteId = Date.now(); 
         meeting.hasArchived = false;
         
         meeting.options = data.options.map((opt, index) => ({
-            id: index, text: opt.text, color: opt.color, count: 0
+            id: index, 
+            text: String(opt.text).substring(0, 100), // 選項長度限制
+            color: opt.color, 
+            count: 0
         }));
 
         if (data.duration > 0) {
-            meeting.endTime = Date.now() + (data.duration * 1000);
+            // [安全] 限制最大倒數時間為 1 小時 (3600秒)
+            const safeDuration = Math.min(data.duration, 3600);
+            meeting.endTime = Date.now() + (safeDuration * 1000);
             if (meeting.timer) clearInterval(meeting.timer);
             meeting.timer = setInterval(() => {
                 const currentM = meetings.get(meeting.pin);
@@ -347,11 +416,18 @@ io.on('connection', (socket) => {
         if (socket.data.isHost) return;
         
         touchMeeting(meeting);
+        
+        // [安全] 確保 votes 是陣列且內容合法 (防止注入攻擊)
+        const safeVotes = Array.isArray(data.votes) 
+            ? data.votes.filter(v => Number.isInteger(v)) 
+            : [];
+
         meeting.voterRecords.set(data.deviceId, {
-            username: data.username, votes: data.votes
+            username: String(data.username).substring(0, 20), 
+            votes: safeVotes
         });
         broadcastState(meeting);
-        socket.emit('vote-confirmed', data.votes);
+        socket.emit('vote-confirmed', safeVotes);
     });
 
     // --- CSV 匯出 ---
@@ -367,7 +443,10 @@ io.on('connection', (socket) => {
                 for (const [name, choices] of Object.entries(record.voterDetails)) {
                     if (choices.includes(opt.id)) voters.push(name);
                 }
-                csvContent += `"[歷史] ${record.question}","${opt.text}",${opt.count},"${voters.join('; ')}"\n`;
+                // [安全] 轉義 CSV 內容防止 CSV Injection
+                const safeQ = record.question.replace(/"/g, '""');
+                const safeOpt = opt.text.replace(/"/g, '""');
+                csvContent += `"[歷史] ${safeQ}","${safeOpt}",${opt.count},"${voters.join('; ')}"\n`;
             });
             csvContent += `,,,\n`; 
         });
@@ -376,7 +455,13 @@ io.on('connection', (socket) => {
 
     // --- 管理員 API ---
     socket.on('admin-login', (pwd) => {
-        if (pwd === adminPassword) {
+        // [安全] 速率限制檢查
+        if (!loginLimiter.check(clientIp)) {
+            socket.emit('admin-login-fail'); // 或發送特定錯誤訊息
+            return;
+        }
+
+        if (pwd === ADMIN_PASSWORD) {
             socket.join('admin-room');
             socket.emit('admin-login-success');
             broadcastAdminList();
@@ -396,7 +481,9 @@ io.on('connection', (socket) => {
         if (socket.rooms.has('admin-room')) {
             const meeting = meetings.get(data.pin);
             if (meeting) {
-                meeting.timeoutDuration = data.hours * 60 * 60 * 1000;
+                // [安全] 限制最大與最小時間
+                const hours = Math.max(0.5, Math.min(parseInt(data.hours), 24));
+                meeting.timeoutDuration = hours * 60 * 60 * 1000;
                 broadcastAdminList();
             }
         }
@@ -404,19 +491,21 @@ io.on('connection', (socket) => {
 
     socket.on('admin-change-password', (newPwd) => {
         if (socket.rooms.has('admin-room')) {
-            adminPassword = newPwd;
-            socket.emit('admin-msg', '管理員密碼已更新');
+            // 基於安全考量，現在不允許線上修改密碼，提示去改 .env
+            socket.emit('admin-msg', '基於安全考量，請透過修改 Render 環境變數 (ADMIN_PASSWORD) 來變更密碼');
         }
     });
 
     socket.on('admin-add-preset', (preset) => {
         if (socket.rooms.has('admin-room')) {
-            globalPresets.push(preset);
-            meetings.forEach(m => {
-                m.presets.push(preset);
-                broadcastState(m); 
-            });
-            socket.emit('admin-msg', '全域模板已新增');
+            if(preset.name && preset.question && Array.isArray(preset.options)) {
+                globalPresets.push(preset);
+                meetings.forEach(m => {
+                    m.presets.push(preset);
+                    broadcastState(m); 
+                });
+                socket.emit('admin-msg', '全域模板已新增');
+            }
         }
     });
 
