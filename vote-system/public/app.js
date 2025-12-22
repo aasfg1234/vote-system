@@ -16,8 +16,8 @@ let currentVoteId = 0;
 let currentPin = '';
 let currentUsername = '';
 let currentPresets = []; 
-let hasConfirmedResult = false; // 是否已點擊收到
-let lastServerState = null;     // 暫存伺服器狀態
+let hasConfirmedResult = false; 
+let lastServerState = null;     
 let currentFontSize = parseFloat(localStorage.getItem('vote_font_scale')) || 1.0;
 document.documentElement.style.fontSize = `${currentFontSize * 16}px`;
 const deviceId = getDeviceId();
@@ -310,8 +310,44 @@ window.applyPreset = function(index) {
     showToast(`套用：${p.name}`);
 };
 
+// [修復] 監聽歷史紀錄更新
+socket.on('history-update', (history) => {
+    if (isHostPage) {
+        renderHistory(history);
+    }
+});
+
+// [修復] 渲染歷史紀錄函式
+function renderHistory(history) {
+    const container = getEl('history-container');
+    if (!container) return;
+    if (!history || history.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#ccc; font-size:0.8rem;">尚未有歸檔紀錄</p>';
+        return;
+    }
+    let html = '';
+    // 顯示最新的在上面
+    [...history].reverse().forEach(record => {
+        const timeStr = new Date(record.timestamp).toLocaleTimeString();
+        let optionsSummary = '';
+        record.options.forEach(opt => {
+             optionsSummary += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:4px; color:#64748b;">
+                <span>${opt.text}</span>
+                <span>${opt.count} 票</span>
+             </div>`;
+        });
+        html += `
+        <div class="history-card" style="background:#fff; border:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:4px;">
+            <div class="history-title" style="font-weight:bold; margin-bottom:5px; color:var(--text-main);">${record.question}</div>
+            <div class="history-stats" style="font-size:0.85rem; color:#999;">🕒 ${timeStr} | 🗳️ 總票數: ${record.totalVotes}</div>
+            <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">${optionsSummary}</div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
 socket.on('state-update', (state) => {
-    // 1. 主持人頁面更新 (略，這部分沒問題)
+    // 1. 主持人頁面更新
     if (isHostPage) {
         getEl('monitor-count').textContent = state.joinedCount;
         getEl('monitor-total').textContent = state.totalVotes;
@@ -351,11 +387,10 @@ socket.on('state-update', (state) => {
     if (state.voteId !== currentVoteId) {
         myVotes = [];
         currentVoteId = state.voteId;
-        hasConfirmedResult = false; // 重置確認狀態
+        hasConfirmedResult = false; 
         updateSelectionUI();
     }
     
-    // 儲存狀態供確認按鈕使用
     lastServerState = state;
 
     getEl('total-votes').textContent = state.totalVotes;
@@ -363,15 +398,13 @@ socket.on('state-update', (state) => {
     const timer = getEl('timer');
     if(timer) timer.textContent = state.timeLeft + 's';
 
-    // --- 修正2：彩帶觸發時機 ---
-    // 只有當「上次是 voting」且「這次是 ended」時才發射
+    // 彩帶邏輯：從 voting 轉 ended 才發射
     if(lastStatus === 'voting' && state.status === 'ended') {
          if(typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
     }
     lastStatus = state.status;
 
-    // --- 判斷是否顯示等待畫面 ---
-    // 如果是 waiting 狀態，或是 ended 狀態且使用者已經按了確認
+    // 判斷顯示等待畫面
     const showWait = state.status === 'waiting' || (state.status === 'ended' && hasConfirmedResult);
 
     if (showWait) {
@@ -386,7 +419,6 @@ socket.on('state-update', (state) => {
         return;
     }
 
-    // --- 顯示投票/結果畫面 ---
     getEl('question-text').textContent = state.question;
     const statusTxt = getEl('status-text');
     statusTxt.textContent = state.status === 'voting' ? (currentSettings.blindMode ? '投票中 (盲測)' : '投票中') : '已結束';
@@ -417,14 +449,12 @@ socket.on('state-update', (state) => {
         </div>`;
     }).join('');
 
-    // 顯示確認按鈕
     if (state.status === 'ended') {
         container.innerHTML += `<div style="text-align:center; margin-top:20px;">
             <button class="btn" onclick="confirmResult()" style="width:auto; padding:10px 30px;">👌 收到</button>
         </div>`;
     }
     
-    // 鎖定卡片點擊
     if (state.status === 'ended') {
          container.querySelectorAll('.option-card').forEach(c => c.style.cursor = 'default');
     } else {
@@ -467,24 +497,14 @@ window.handleVote = function(id) {
     socket.emit('submit-vote', { pin: currentPin, username: currentUsername, deviceId, votes: myVotes });
 }
 
-// --- 修正1：確認按鈕 ---
-// 將函式掛載到 window，並確保有 lastServerState 時直接重繪畫面
 window.confirmResult = function() {
-    console.log("Button Clicked"); // 除錯用
+    console.log("Button Clicked"); 
     hasConfirmedResult = true;
     if (lastServerState) {
-        // 強制根據新的 hasConfirmedResult 狀態重繪畫面
-        // 這裡我們直接調用 socket 的監聽器邏輯，或者直接複製邏輯
-        // 為求穩健，我們直接刷新頁面也是一種方法，但最好是調用渲染函式
-        // 由於我們沒有把 render 拆成獨立函式，最簡單的方法是：
-        // 重新觸發一次 render 邏輯。這裡我們直接手動執行一次渲染邏輯的關鍵部分。
-        
-        // 模擬伺服器更新
         const listeners = socket.listeners('state-update');
         if (listeners && listeners.length > 0) {
             listeners[0](lastServerState);
         } else {
-            // 如果監聽器抓不到，就 reload
             location.reload();
         }
     }
