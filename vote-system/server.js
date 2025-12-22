@@ -40,7 +40,7 @@ function createMeetingState(pin, hostName) {
         history: [],
         voterRecords: new Map(),
         presets: [...globalPresets],
-        // --- 新增：超時控制 ---
+        // --- 超時控制 ---
         createdAt: Date.now(),
         lastActiveTime: Date.now(),
         timeoutDuration: DEFAULT_TIMEOUT 
@@ -188,7 +188,6 @@ function terminateMeeting(meeting, reason = 'manual') {
 function broadcastAdminList() {
     const list = [];
     meetings.forEach(m => {
-        // 計算剩餘時間 (小時)
         const idleTime = Date.now() - m.lastActiveTime;
         const remaining = Math.max(0, m.timeoutDuration - idleTime);
         list.push({
@@ -196,8 +195,8 @@ function broadcastAdminList() {
             hostName: m.hostName,
             status: m.status,
             activeUsers: io.sockets.adapter.rooms.get(`meeting-${m.pin}`)?.size || 0,
-            remainingTime: Math.round(remaining / 1000 / 60), // 分鐘
-            timeoutSetting: Math.round(m.timeoutDuration / 1000 / 60 / 60) // 小時
+            remainingTime: Math.round(remaining / 1000 / 60), 
+            timeoutSetting: Math.round(m.timeoutDuration / 1000 / 60 / 60) 
         });
     });
     io.to('admin-room').emit('admin-list-update', list);
@@ -234,7 +233,7 @@ io.on('connection', (socket) => {
         broadcastAdminList();
     });
 
-    // 2. 建立新會議室 (不需要密碼，只需要名稱)
+    // 2. 建立新會議室
     socket.on('create-meeting', (hostName) => {
         const newPin = generateUniquePin();
         const newMeeting = createMeetingState(newPin, hostName);
@@ -251,7 +250,33 @@ io.on('connection', (socket) => {
         broadcastAdminList();
     });
 
-    // 3. 投票控制
+    // [新增] 3. 主持人恢復連線 (Resume)
+    socket.on('host-resume', (pin) => {
+        const meeting = meetings.get(pin);
+        if (meeting && meeting.status !== 'terminated') {
+            // 重新綁定身分
+            socket.data.pin = pin;
+            socket.data.isHost = true;
+            
+            socket.join(`meeting-${pin}`);
+            socket.join(`${pin}-host`);
+            
+            touchMeeting(meeting);
+            
+            // 告訴前端恢復成功，並傳回當前狀態
+            socket.emit('host-resume-success', { 
+                pin: pin, 
+                hostName: meeting.hostName,
+                history: meeting.history
+            });
+            broadcastState(meeting);
+        } else {
+            // 找不到或已結束
+            socket.emit('host-resume-fail');
+        }
+    });
+
+    // 4. 投票控制
     socket.on('start-vote', (data) => {
         const meeting = meetings.get(socket.data.pin);
         if (!meeting || !socket.data.isHost) return;
@@ -335,7 +360,6 @@ io.on('connection', (socket) => {
         if (!meeting || !socket.data.isHost) return;
         touchMeeting(meeting);
         
-        // (CSV 邏輯保持原樣，篇幅省略，若需要請告知，這裡主要處理流程)
         let csvContent = "\uFEFF題目,選項,票數,投票者名單\n"; 
         meeting.history.forEach(record => {
             record.options.forEach(opt => {
@@ -362,7 +386,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('admin-terminate', (targetPin) => {
-        // 只有在 admin-room 的人可以執行
         if (socket.rooms.has('admin-room')) {
             const meeting = meetings.get(targetPin);
             if (meeting) terminateMeeting(meeting, 'admin-force');
@@ -373,7 +396,6 @@ io.on('connection', (socket) => {
         if (socket.rooms.has('admin-room')) {
             const meeting = meetings.get(data.pin);
             if (meeting) {
-                // data.hours 為小時
                 meeting.timeoutDuration = data.hours * 60 * 60 * 1000;
                 broadcastAdminList();
             }
@@ -390,10 +412,9 @@ io.on('connection', (socket) => {
     socket.on('admin-add-preset', (preset) => {
         if (socket.rooms.has('admin-room')) {
             globalPresets.push(preset);
-            // 同步給所有正在進行的會議
             meetings.forEach(m => {
                 m.presets.push(preset);
-                broadcastState(m); // 讓主持人看到
+                broadcastState(m); 
             });
             socket.emit('admin-msg', '全域模板已新增');
         }
