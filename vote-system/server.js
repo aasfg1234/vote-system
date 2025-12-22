@@ -34,9 +34,10 @@ let meetingState = {
 };
 
 let meetingHistory = []; 
+
+// ✨ 修改：記錄資料結構變更為 Key: deviceId, Value: { username, votes }
 const voterRecords = new Map();
 
-// --- 歸檔功能 ---
 function archiveCurrentVote() {
     if (!meetingState.question || meetingState.hasArchived) return;
 
@@ -48,34 +49,37 @@ function archiveCurrentVote() {
         voterDetails: {} 
     };
     let total = 0;
-    voterRecords.forEach((votes, username) => {
-        if (votes && votes.length > 0) {
+    
+    // ✨ 修改：配合新的 Map 結構存取資料
+    voterRecords.forEach((data, deviceId) => {
+        if (data.votes && data.votes.length > 0) {
             total++;
-            snapshot.voterDetails[username] = votes;
+            // 在歷史紀錄中，我們顯示名字 (如果一個人用同裝置換名字，會顯示最後一個名字)
+            snapshot.voterDetails[data.username] = data.votes;
         }
     });
     snapshot.totalVotes = total;
     meetingHistory.push(snapshot);
     meetingState.hasArchived = true;
     
-    // ✨ 優化：歸檔後，主動廣播歷史紀錄更新 (只給主持人)
     broadcastHistory();
 }
 
-// --- ✨ 優化：獨立的歷史紀錄廣播函式 ---
 function broadcastHistory() {
-    // 只有主持人房間需要收到歷史紀錄，節省與會者的流量
     io.to('host-room').emit('history-update', meetingHistory);
 }
 
-// --- 廣播狀態 (已移除 history) ---
 function broadcastState() {
     let totalVotes = 0;
     meetingState.options.forEach(opt => opt.count = 0);
 
     const hostVoterMap = {}; 
 
-    voterRecords.forEach((votes, username) => {
+    // ✨ 修改：配合新的 Map 結構計算票數
+    voterRecords.forEach((data, deviceId) => {
+        const votes = data.votes;
+        const username = data.username;
+
         if (votes && votes.length > 0) {
             totalVotes++;
             votes.forEach(optId => {
@@ -127,7 +131,6 @@ function broadcastState() {
         voteId: meetingState.voteId
     };
 
-    // ✨ 優化：這裡不再傳送 history，封包變小了
     io.to('host-room').emit('state-update', { 
         ...basePayload, 
         options: fullOptions,
@@ -147,12 +150,12 @@ function resetVotes() {
     meetingState.options.forEach(opt => opt.count = 0);
 }
 
-// --- Socket 連線 ---
 io.on('connection', (socket) => {
     
     socket.on('join', (data) => {
         const pin = typeof data === 'object' ? data.pin : data;
         const username = typeof data === 'object' ? data.username : null;
+        const deviceId = typeof data === 'object' ? data.deviceId : null; // ✨ 接收 deviceId
 
         if (meetingState.status === 'terminated' && username !== hostName) {
             socket.emit('joined', { success: false, error: '會議已結束' });
@@ -163,9 +166,12 @@ io.on('connection', (socket) => {
             socket.join('meeting-room');
             socket.emit('joined', { success: true });
             
-            if (username && username !== hostName && meetingState.status === 'voting') {
-                const previousVotes = voterRecords.get(username);
-                if (previousVotes) socket.emit('vote-confirmed', previousVotes);
+            // ✨ 修改：恢復投票狀態時，優先使用 deviceId 查詢
+            if (deviceId && meetingState.status === 'voting') {
+                const record = voterRecords.get(deviceId);
+                if (record) {
+                    socket.emit('vote-confirmed', record.votes);
+                }
             }
             broadcastState();
         } else {
@@ -194,12 +200,8 @@ io.on('connection', (socket) => {
 
             socket.join('host-room'); 
             socket.join('meeting-room'); 
-            
             socket.emit('host-login-success', { pin: meetingState.pin, hostName: hostName });
-            
-            // ✨ 優化：主持人登入時，立刻補發一次歷史紀錄給他
             socket.emit('history-update', meetingHistory);
-            
             broadcastState(); 
         } else {
             socket.emit('host-login-fail');
@@ -276,11 +278,19 @@ io.on('connection', (socket) => {
         if (meetingState.status !== 'voting') return;
         const votes = data.votes;
         const username = data.username;
+        const deviceId = data.deviceId; // ✨ 接收 deviceId
         
         if (socket.rooms.has('host-room')) return;
 
-        if (!username) return; 
-        voterRecords.set(username, Array.isArray(votes) ? votes : [votes]);
+        // ✨ 關鍵修改：以 deviceId 為準來儲存投票
+        // 如果這個 deviceId 已經投過，會直接覆蓋（更新），確保一人一票
+        if (!username || !deviceId) return; 
+        
+        voterRecords.set(deviceId, {
+            username: username, // 更新名字 (如果使用者換名字，這裡會更新)
+            votes: Array.isArray(votes) ? votes : [votes]
+        });
+
         broadcastState();
         socket.emit('vote-confirmed', votes);
     });
@@ -303,10 +313,11 @@ io.on('connection', (socket) => {
 
         if (meetingState.question && meetingState.status !== 'terminated') {
             const currentVoterMap = {};
-            voterRecords.forEach((votes, username) => {
-                votes.forEach(optId => {
+            // ✨ 修改：匯出時也從新的 Map 結構讀取
+            voterRecords.forEach((data, deviceId) => {
+                data.votes.forEach(optId => {
                     if(!currentVoterMap[optId]) currentVoterMap[optId] = [];
-                    currentVoterMap[optId].push(username);
+                    currentVoterMap[optId].push(data.username);
                 });
             });
             meetingState.options.forEach(opt => {
