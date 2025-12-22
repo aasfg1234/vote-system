@@ -70,15 +70,26 @@ if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
     
-    // 判斷是否為預覽模式
     const isPreview = urlParams.get('preview') === 'true';
+    
+    // [新增] 檢查網址參數是否有 pin 和 username (給 Host 預覽用)
+    const urlPin = urlParams.get('pin');
+    const urlUser = urlParams.get('username');
 
-    // 只有在「不是預覽模式」且「有儲存資料」時才自動登入
+    // 邏輯 1: 一般使用者的自動登入 (非預覽模式)
     if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
         loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2>`;
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
+    }
+    
+    // [新增] 邏輯 2: Host 預覽視窗的自動登入 (預覽模式 + 網址有參數)
+    if (isPreview && urlPin && urlUser) {
+        currentPin = urlPin;
+        currentUsername = urlUser;
+        // 預覽模式直接登入，不寫入 localStorage 以免汙染主視窗
+        socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: 'host-preview-' + Date.now() });
     }
 
     const joinBtn = getEl('join-btn');
@@ -145,6 +156,15 @@ if (isHostPage) {
         socket.emit('host-resume', storedHostPin);
     }
 
+    // [新增] 更新預覽視窗函式
+    function updatePreview(pin, name) {
+        const iframe = document.getElementById('preview-frame');
+        if (iframe) {
+            // 把 PIN 和 名稱 塞進 URL，這樣 app.js 就能讀取並自動登入
+            iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent(name)}`;
+        }
+    }
+
     window.clearHostData = function() {
         localStorage.removeItem('vote_host_pin');
         localStorage.removeItem('vote_host_name');
@@ -166,6 +186,10 @@ if (isHostPage) {
         currentUsername = data.hostName;
         localStorage.setItem('vote_host_pin', data.pin);
         localStorage.setItem('vote_host_name', data.hostName);
+        
+        // [新增] 呼叫更新預覽
+        updatePreview(data.pin, data.hostName);
+        
         showToast('會議室建立成功');
     });
 
@@ -177,6 +201,10 @@ if (isHostPage) {
         currentPin = data.pin;
         currentUsername = data.hostName;
         if(data.history) renderHistory(data.history);
+        
+        // [新增] 呼叫更新預覽
+        updatePreview(data.pin, data.hostName);
+
         showToast('歡迎回來，會議連線已恢復');
     });
 
@@ -208,6 +236,7 @@ if (isHostPage) {
     socket.on('host-name-updated', (n) => {
         getEl('host-name-display').textContent = n;
         localStorage.setItem('vote_host_name', n);
+        // 如果改名，也可以順便更新 iframe，但這裡暫不強制刷新以免干擾體驗
         showToast('名稱更新');
     });
 
@@ -365,7 +394,6 @@ socket.on('history-update', (history) => {
     }
 });
 
-// [修復] 歷史紀錄顯示 (含最高票標示)
 function renderHistory(history) {
     const container = getEl('history-container');
     if (!container) return;
@@ -374,23 +402,16 @@ function renderHistory(history) {
         return;
     }
     let html = '';
-    // 顯示最新的在上面
     [...history].reverse().forEach(record => {
         const timeStr = new Date(record.timestamp).toLocaleTimeString();
-        
-        // 1. 計算該場歷史紀錄的最高票數
         const maxVotes = Math.max(...record.options.map(o => o.count));
 
         let optionsSummary = '';
         record.options.forEach(opt => {
-             // 2. 判斷是否為最高票 (需大於0)
              const isWinner = maxVotes > 0 && opt.count === maxVotes;
-             
-             // 3. 設定樣式：贏家金色底+粗體；輸家灰色
              const rowStyle = isWinner 
                 ? 'font-weight:bold; color:var(--text-main); background:#fffdf0; border:1px solid #d4af37; border-radius:4px; padding:4px 8px;' 
                 : 'color:#64748b; padding:2px 8px;';
-             
              const icon = isWinner ? '👑 ' : '';
 
              optionsSummary += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:4px; align-items:center; ${rowStyle}">
@@ -408,7 +429,6 @@ function renderHistory(history) {
     container.innerHTML = html;
 }
 
-// [渲染結束畫面]
 function renderTerminatedScreen(reason) {
     const optionsContainer = getEl('options-container');
     if (optionsContainer) {
