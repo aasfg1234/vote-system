@@ -21,13 +21,9 @@
         .role-title { font-family: 'Noto Serif TC'; font-size: 1.5rem; font-weight: 600; margin-bottom: 5px; display: block; }
         .role-desc { font-size: 0.9rem; color: var(--text-light); display: block; }
     </style>
-    
     <script>
-        // 檢查是否有與會者登入紀錄
         const storedPin = localStorage.getItem('vote_pin');
         const storedName = localStorage.getItem('vote_username');
-
-        // 如果有資料，直接跳轉到與會者頁面 (participant.html)
         if (storedPin && storedName) {
             window.location.href = 'participant.html';
         }
@@ -45,12 +41,18 @@
         </a>
 
         <a href="host.html" class="role-card">
-            <span class="role-icon">💻</span>
-            <span class="role-title">我是主持人</span>
-            <span class="role-desc">建立題目與控制流程</span>
+            <span class="role-icon">🆕</span>
+            <span class="role-title">新增會議室</span>
+            <span class="role-desc">建立一個新的投票房間</span>
         </a>
         
-        <p style="font-size: 0.8rem; color: #cbd5e1; margin-top: 30px;">Literary Vote System v2.0</p>
+        <a href="admin.html" class="role-card" style="border-style: dashed; opacity: 0.8;">
+            <span class="role-icon">🛡️</span>
+            <span class="role-title">我是管理員</span>
+            <span class="role-desc">系統後台管理</span>
+        </a>
+        
+        <p style="font-size: 0.8rem; color: #cbd5e1; margin-top: 30px;">Literary Vote System v3.0</p>
     </div>
 </body>
 </html>
