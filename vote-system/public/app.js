@@ -15,25 +15,27 @@ const isAdminPage = document.body.id === 'admin-page';
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// --- [關鍵修復] 嚴格的預覽模式判斷 ---
+// --- [關鍵] 嚴格預覽判斷 ---
 const isInIframe = window.self !== window.top;
 const hasPreviewParam = urlParams.get('preview') === 'true';
-// 只有「真的在 iframe 裡」且「網址有 preview」才算預覽
 const isPreview = hasPreviewParam && isInIframe;
 
-// 如果網址有 preview 但不是在 iframe (誤複製連結)，強制清洗網址
+// 如果網址有 preview 但不在 iframe (誤複製)，清洗網址
 if (hasPreviewParam && !isInIframe) {
     const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
     window.history.replaceState({path: cleanUrl}, '', cleanUrl);
 }
 
-// --- [關鍵修復] 裝置 ID 邏輯 ---
+// --- [關鍵] 雙軌制 Device ID ---
 function getDeviceId() {
-    // 如果是預覽模式，永遠回傳一個隨機 ID，避免跟主持人的主視窗衝突
     if (isPreview) {
-        return 'preview_guest_' + Math.random().toString(36).substr(2, 9);
+        let pid = sessionStorage.getItem('vote_preview_id');
+        if (!pid) {
+            pid = 'preview_guest_' + Math.random().toString(36).substr(2, 9);
+            sessionStorage.setItem('vote_preview_id', pid);
+        }
+        return pid;
     }
-    // 真實使用者才使用 LocalStorage
     let id = localStorage.getItem('vote_device_id');
     if (!id) {
         id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
@@ -42,7 +44,6 @@ function getDeviceId() {
     return id;
 }
 
-// 變數初始化
 const deviceId = getDeviceId();
 let myVotes = [];
 let currentSettings = {};
@@ -66,7 +67,6 @@ function showToast(msg) {
     setTimeout(() => t.style.opacity = '0', 2000);
 }
 
-// --- 字體調整 ---
 const fontUpBtn = getEl('font-up'); 
 const fontDownBtn = getEl('font-down'); 
 if(fontUpBtn) fontUpBtn.addEventListener('click', () => adjustFont(0.1));
@@ -81,7 +81,7 @@ function adjustFont(delta) {
 }
 
 // ==========================
-// A. 與會者頁面邏輯
+// A. 與會者頁面
 // ==========================
 if (isParticipantPage) {
     const loginScreen = getEl('login-screen');
@@ -89,25 +89,20 @@ if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
     
-    // 重新抓取乾淨的參數
     const currentUrlParams = new URLSearchParams(window.location.search);
     const urlPin = currentUrlParams.get('pin');
     const urlUser = currentUrlParams.get('username');
 
-    // 1. [老鳥自動登入]：不是預覽 + 有存過資料 -> 自動連線
     if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
         loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2>`;
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
-    // 2. [掃碼/連結進場]：不是預覽 + 有 PIN -> 只填欄位，不連線！(解決鬼影人數問題)
     else if (!isPreview && urlPin) {
         getEl('pin-input').value = urlPin;
-        // 如果網址還有帶名字 (例如主持人傳給特定人)，也可以幫忙填
         if (urlUser) getEl('username-input').value = urlUser;
     }
-    // 3. [預覽視窗]：是預覽 + 有 PIN + 有名字 -> 自動連線
     else if (isPreview && urlPin && urlUser) {
         currentPin = urlPin;
         currentUsername = urlUser;
@@ -121,8 +116,6 @@ if (isParticipantPage) {
             const username = getEl('username-input').value.trim();
             if (!username) return showToast('請輸入姓名');
             if (pin.length !== 4) return showToast('請輸入 4 位數 PIN');
-            
-            // 只有手動點擊時才存入 LocalStorage
             localStorage.setItem('vote_pin', pin);
             localStorage.setItem('vote_username', username);
             currentPin = pin;
@@ -132,9 +125,7 @@ if (isParticipantPage) {
     }
 
     getEl('leave-btn')?.addEventListener('click', () => {
-        if (confirm('確定要離開會議嗎？')) {
-            logout();
-        }
+        if (confirm('確定要離開會議嗎？')) logout();
     });
 
     socket.on('joined', (data) => {
@@ -143,7 +134,6 @@ if (isParticipantPage) {
             voteScreen.classList.remove('hidden');
         } else {
             showToast(data.error);
-            // 如果自動登入失敗，清除舊資料並重整
             if (!isPreview) {
                 localStorage.removeItem('vote_pin');
                 setTimeout(() => location.href = 'index.html', 1500);
@@ -159,14 +149,14 @@ if (isParticipantPage) {
 }
 
 // ==========================
-// B. 主持人頁面邏輯 (Host)
+// B. 主持人頁面
 // ==========================
 if (isHostPage) {
     const authOverlay = getEl('host-auth-overlay');
     const createBtn = getEl('create-meeting-btn');
     const nameInput = getEl('host-name-input');
-    
     const storedHostPin = localStorage.getItem('vote_host_pin');
+    
     if (storedHostPin) {
         getEl('host-auth-overlay').innerHTML = `
             <div class="container" style="max-width:400px; text-align:center; padding:50px;">
@@ -182,10 +172,7 @@ if (isHostPage) {
 
     function updatePreview(pin, name) {
         const iframe = document.getElementById('preview-frame');
-        if (iframe) {
-            // 預覽視窗固定叫「預覽」或「主持人」，這裡設為預覽
-            iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent('主持人(預覽)')}`;
-        }
+        if (iframe) iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent('主持人(預覽)')}`;
     }
 
     window.clearHostData = function() {
@@ -197,7 +184,6 @@ if (isHostPage) {
     createBtn.addEventListener('click', () => {
         const name = nameInput.value.trim();
         if (!name) return showToast('請輸入會議名稱');
-        // [關鍵] 傳送 deviceId，讓伺服器把主持人也註冊成投票者
         socket.emit('create-meeting', { hostName: name, deviceId: deviceId });
     });
 
