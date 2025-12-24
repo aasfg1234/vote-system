@@ -9,14 +9,12 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- [安全] 全域設定 (直接讀取 Render 注入的變數) ---
-// 如果是 Render 環境，它會自動填入我們在後台設定的值
-// 如果是本機沒設定，就會變回預設值 8888 (方便您以後測試)
+// --- 全域設定 ---
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '8888'; 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_TIMEOUT = parseInt(process.env.TIMEOUT_DURATION) || 3 * 60 * 60 * 1000;
 
-// --- [安全] 速率限制器 ---
+// --- 速率限制器 ---
 class RateLimiter {
     constructor(limit, windowMs) {
         this.requests = new Map(); 
@@ -65,7 +63,8 @@ function createMeetingState(pin, hostName) {
         voteId: 0,
         hasArchived: false,
         history: [],
-        voterRecords: new Map(),
+        voterRecords: new Map(), // Key: deviceId, Value: { username, votes, joinTime }
+        attendanceLog: [],       // [新增] 進出紀錄流水帳 { time, name, action }
         presets: [...globalPresets],
         createdAt: Date.now(),
         lastActiveTime: Date.now(),
@@ -81,7 +80,7 @@ function generateUniquePin() {
 
 function touchMeeting(meeting) { if (meeting) meeting.lastActiveTime = Date.now(); }
 
-// --- 自動清理機制 ---
+// --- 自動清理 ---
 setInterval(() => {
     const now = Date.now();
     meetings.forEach((meeting, pin) => {
@@ -121,8 +120,16 @@ function broadcastState(meeting) {
     let totalVotes = 0;
     meeting.options.forEach(opt => opt.count = 0);
     const hostVoterMap = {}; 
+    const participantList = []; // [新增] 給主持人看的即時名單
 
-    meeting.voterRecords.forEach((data) => {
+    meeting.voterRecords.forEach((data, deviceId) => {
+        // 整理名單
+        participantList.push({
+            name: data.username,
+            joinTime: data.joinTime
+        });
+
+        // 統計票數
         const votes = data.votes;
         const username = data.username;
         if (votes && votes.length > 0) {
@@ -137,6 +144,9 @@ function broadcastState(meeting) {
             });
         }
     });
+
+    // 依加入時間排序
+    participantList.sort((a, b) => a.joinTime - b.joinTime);
 
     const roomName = `meeting-${meeting.pin}`;
     const allSockets = io.sockets.adapter.rooms.get(roomName);
@@ -169,8 +179,13 @@ function broadcastState(meeting) {
         voteId: meeting.voteId
     };
 
+    // 發送給主持人 (包含詳細名單)
     io.to(hostRoomName).emit('state-update', { 
-        ...basePayload, options: fullOptions, hostVoterMap, presets: meeting.presets 
+        ...basePayload, 
+        options: fullOptions, 
+        hostVoterMap, 
+        presets: meeting.presets,
+        participantList: participantList // [新增]
     });
 
     if (meeting.settings.blindMode && meeting.status === 'voting') {
@@ -216,6 +231,7 @@ function broadcastAdminList() {
     io.to('admin-room').emit('admin-list-update', list);
 }
 
+// --- Socket 連線 ---
 io.on('connection', (socket) => {
     const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
 
@@ -232,6 +248,26 @@ io.on('connection', (socket) => {
         socket.data.pin = pin;
         socket.data.username = username;
         touchMeeting(meeting);
+
+        // [新增] 記錄加入時間與 Attendance Log
+        const now = Date.now();
+        if (!meeting.voterRecords.has(data.deviceId)) {
+            // 如果是新裝置，記錄加入時間
+            meeting.voterRecords.set(data.deviceId, { username, votes: [], joinTime: now });
+        } else {
+            // 如果是舊裝置重連，更新名字
+            const record = meeting.voterRecords.get(data.deviceId);
+            record.username = username;
+            meeting.voterRecords.set(data.deviceId, record);
+        }
+        
+        // 寫入流水帳
+        meeting.attendanceLog.push({
+            time: new Date().toISOString(),
+            name: username,
+            action: '加入',
+            deviceId: data.deviceId
+        });
 
         socket.emit('joined', { success: true });
         if (data.deviceId && meeting.status === 'voting') {
@@ -280,7 +316,8 @@ io.on('connection', (socket) => {
         if (!Array.isArray(data.options) || data.options.length < 2) return;
 
         archiveCurrentVote(meeting);
-        meeting.voterRecords.clear();
+        // 保留 joinTime，只清空投票
+        meeting.voterRecords.forEach(record => record.votes = []);
         meeting.options.forEach(o => o.count = 0);
         
         meeting.status = 'voting';
@@ -342,27 +379,54 @@ io.on('connection', (socket) => {
         if (!meeting || meeting.status !== 'voting') return;
         if (socket.data.isHost) return;
         touchMeeting(meeting);
+        
         const safeVotes = Array.isArray(data.votes) ? data.votes.filter(v => Number.isInteger(v)) : [];
-        meeting.voterRecords.set(data.deviceId, { username: String(data.username).substring(0, 20), votes: safeVotes });
+        
+        // 更新投票紀錄，保留 joinTime
+        if (meeting.voterRecords.has(data.deviceId)) {
+            const record = meeting.voterRecords.get(data.deviceId);
+            record.votes = safeVotes;
+            record.username = String(data.username).substring(0, 20);
+            meeting.voterRecords.set(data.deviceId, record);
+        }
+
         broadcastState(meeting);
         socket.emit('vote-confirmed', safeVotes);
     });
 
+    // --- CSV 匯出 (大幅修改) ---
     socket.on('request-export', () => {
         const meeting = meetings.get(socket.data.pin);
         if (!meeting || !socket.data.isHost) return;
         touchMeeting(meeting);
-        let csvContent = "\uFEFF題目,選項,票數,投票者名單\n"; 
+        
+        // 1. 會議基本資訊
+        let csvContent = `\uFEFF"會議名稱","${meeting.hostName.replace(/"/g, '""')}"\n`;
+        csvContent += `"PIN 碼","${meeting.pin}"\n`;
+        csvContent += `"匯出時間","${new Date().toLocaleString()}"\n\n`;
+
+        // 2. 投票詳細紀錄
+        csvContent += `--- 投票歷史紀錄 ---\n`;
+        csvContent += `"題目","選項","票數","投票者名單"\n`; 
         meeting.history.forEach(record => {
             record.options.forEach(opt => {
                 const voters = [];
                 for (const [name, choices] of Object.entries(record.voterDetails)) { if (choices.includes(opt.id)) voters.push(name); }
                 const safeQ = record.question.replace(/"/g, '""');
                 const safeOpt = opt.text.replace(/"/g, '""');
-                csvContent += `"[歷史] ${safeQ}","${safeOpt}",${opt.count},"${voters.join('; ')}"\n`;
+                csvContent += `"${safeQ}","${safeOpt}",${opt.count},"${voters.join('; ')}"\n`;
             });
             csvContent += `,,,\n`; 
         });
+
+        // 3. [新增] 出席紀錄流水帳
+        csvContent += `\n--- 出席流水帳 (進出紀錄) ---\n`;
+        csvContent += `"時間","姓名","動作"\n`;
+        meeting.attendanceLog.forEach(log => {
+            const timeStr = new Date(log.time).toLocaleTimeString();
+            csvContent += `"${timeStr}","${log.name}","${log.action}"\n`;
+        });
+
         socket.emit('export-data', csvContent);
     });
 
@@ -413,7 +477,17 @@ io.on('connection', (socket) => {
         const pin = socket.data.pin;
         if (pin) {
             const meeting = meetings.get(pin);
-            if (meeting) setTimeout(() => broadcastState(meeting), 1000);
+            if (meeting) {
+                // [新增] 記錄離開
+                if (socket.data.username && !socket.data.isHost) {
+                    meeting.attendanceLog.push({
+                        time: new Date().toISOString(),
+                        name: socket.data.username,
+                        action: '離開 (斷線/重整)'
+                    });
+                }
+                setTimeout(() => broadcastState(meeting), 1000);
+            }
         }
         broadcastAdminList();
     });
