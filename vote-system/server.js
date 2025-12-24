@@ -1,4 +1,3 @@
-require('dotenv').config(); 
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -10,12 +9,14 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- 全域設定 ---
+// --- [安全] 全域設定 (直接讀取 Render 注入的變數) ---
+// 如果是 Render 環境，它會自動填入我們在後台設定的值
+// 如果是本機沒設定，就會變回預設值 8888 (方便您以後測試)
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '8888'; 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_TIMEOUT = parseInt(process.env.TIMEOUT_DURATION) || 3 * 60 * 60 * 1000;
 
-// --- 速率限制器 ---
+// --- [安全] 速率限制器 ---
 class RateLimiter {
     constructor(limit, windowMs) {
         this.requests = new Map(); 
@@ -162,7 +163,6 @@ function broadcastState(meeting) {
         question: meeting.question,
         totalVotes: totalVotes,
         joinedCount: realUserCount,
-        // [新增] 這裡加入了會議名稱
         meetingName: meeting.hostName, 
         settings: meeting.settings,
         timeLeft: meeting.endTime ? Math.max(0, Math.round((meeting.endTime - Date.now())/1000)) : 0,
