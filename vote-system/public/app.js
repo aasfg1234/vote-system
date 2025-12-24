@@ -444,6 +444,24 @@ socket.on('state-update', (state) => {
     if (isHostPage) {
         getEl('monitor-count').textContent = state.joinedCount;
         getEl('monitor-total').textContent = state.totalVotes;
+        
+        // [新增] 渲染參與者名單
+        const listTable = getEl('participant-list-table');
+        if (listTable && state.participantList) {
+            if (state.participantList.length === 0) {
+                listTable.innerHTML = '<p style="color:#ccc; font-size:0.8rem; text-align:center;">等待加入...</p>';
+            } else {
+                let listHtml = '<table style="width:100%; font-size:0.85rem; border-collapse:collapse;">';
+                listHtml += '<tr style="background:#faf9f6; text-align:left;"><th style="padding:5px;">姓名</th><th style="padding:5px; text-align:right;">加入時間</th></tr>';
+                state.participantList.forEach(p => {
+                    const time = new Date(p.joinTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    listHtml += `<tr style="border-bottom:1px solid #eee;"><td style="padding:5px;">${p.name}</td><td style="padding:5px; text-align:right; color:#999;">${time}</td></tr>`;
+                });
+                listHtml += '</table>';
+                listTable.innerHTML = listHtml;
+            }
+        }
+
         if (state.presets) {
             currentPresets = state.presets;
             const btnContainer = getEl('preset-buttons');
@@ -481,19 +499,14 @@ socket.on('state-update', (state) => {
         return;
     }
 
-    // [新增] 顯示會議名稱 (左上角)
-    // 檢查是否已有顯示名稱的元素，沒有就插入一個
     let titleEl = getEl('meeting-title-display');
     if (!titleEl) {
         titleEl = document.createElement('div');
         titleEl.id = 'meeting-title-display';
-        // 樣式：灰色、粗體、稍微小一點
         titleEl.style.cssText = 'color:var(--text-light); font-weight:bold; font-size:0.9rem; margin-bottom:5px;';
         const container = getEl('vote-screen');
-        // 插入在最上面
         container.insertBefore(titleEl, container.firstChild);
     }
-    // 更新內容
     if (state.meetingName) {
         titleEl.textContent = `📌 ${state.meetingName}`;
     }
