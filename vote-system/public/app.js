@@ -29,19 +29,20 @@ const isAdminPage = document.body.id === 'admin-page';
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// --- [關鍵修復] 預覽模式判斷 ---
+// --- [關鍵修復] 嚴格的預覽模式判斷 ---
 // 只有當網址有 preview=true 且「真的在 iframe 裡面」時，才算是預覽模式
 const isInIframe = window.self !== window.top;
-const isPreview = urlParams.get('preview') === 'true' && isInIframe;
+// 如果網址有 preview=true，但不是在 iframe 裡，那就是使用者誤複製了連結
+// 這時候我們強制視為「非預覽模式」，並清除參數
+const hasPreviewParam = urlParams.get('preview') === 'true';
+const isPreview = hasPreviewParam && isInIframe;
 
-// --- [關鍵修復] 防止誤複製 URL 造成身分錯亂 ---
-// 如果網址帶有 preview=true 但我們不在 iframe 裡 (代表是誤複製到了新分頁)
-if (urlParams.get('preview') === 'true' && !isInIframe) {
+if (hasPreviewParam && !isInIframe) {
     // 強制清除網址參數，避免自動登入邏輯跑錯
+    // 使用 replaceState 乾淨地移除參數，不留痕跡
     const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
     window.history.replaceState({path: cleanUrl}, '', cleanUrl);
-    // 重新整理頁面以確保乾淨狀態
-    window.location.reload();
+    // 這裡不 reload，讓下面的邏輯自然處理乾淨的狀態
 }
 
 // --- 輔助函式 ---
@@ -86,25 +87,25 @@ if (isParticipantPage) {
     const storedName = localStorage.getItem('vote_username');
     
     // 重新抓取參數 (因為上面可能已經清除了)
-    const urlPin = new URLSearchParams(window.location.search).get('pin');
-    const urlUser = new URLSearchParams(window.location.search).get('username');
+    // 這裡我們只抓取乾淨的 URL 參數
+    const currentUrlParams = new URLSearchParams(window.location.search);
+    const urlPin = currentUrlParams.get('pin');
+    const urlUser = currentUrlParams.get('username');
 
-    // 1. 一般使用者：如果有 localStorage，自動嘗試連線
-    // 注意：這裡只會在非預覽模式下執行
+    // 1. 正常自動登入：不是預覽模式 + 本機有存資料
     if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
         loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2>`;
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
-    // QR Code 掃描進場 (帶有 PIN 但沒有 preview)
-    else if (!isPreview && urlPin) {
+    // 2. 掃碼進場：不是預覽模式 + 網址有 PIN (但沒有名字)
+    else if (!isPreview && urlPin && !urlUser) {
         getEl('pin-input').value = urlPin;
-        // 不自動登入，等待使用者輸入名字
+        // 這裡不自動登入，停在登入畫面讓使用者輸入名字 -> 這就解決了「還沒進會議室就算人頭」的問題
     }
-    
-    // 2. 預覽視窗：只有真正判定為 preview 模式才自動連線
-    if (isPreview && urlPin && urlUser) {
+    // 3. 預覽視窗自動登入：必須是預覽模式 + 有 PIN + 有名字
+    else if (isPreview && urlPin && urlUser) {
         currentPin = urlPin;
         currentUsername = urlUser;
         // 使用特殊的 deviceId 給預覽視窗，確保不跟本機打架
@@ -675,6 +676,7 @@ function updateSelectionUI() {
     });
 }
 
+// [修正] 確保 vote ID 是數字
 window.handleVote = function(id) {
     if (!getEl('vote-screen') || document.querySelector('.winner-card')) return;
     if (navigator.vibrate) navigator.vibrate(10);
