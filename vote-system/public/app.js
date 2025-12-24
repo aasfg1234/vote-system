@@ -170,9 +170,8 @@ if (isHostPage) {
         socket.emit('create-meeting', name);
     });
 
-    // [新增] 監聽創建失敗事件 (會議室額滿)
+    // 監聽創建失敗事件 (會議室額滿)
     socket.on('create-failed', (msg) => {
-        // 建立一個簡單的懸浮 Modal
         const modal = document.createElement('div');
         modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; display:flex; justify-content:center; align-items:center;';
         modal.innerHTML = `
@@ -313,13 +312,13 @@ if (isAdminPage) {
         showToast('管理員登入成功');
     });
 
-    // [修改] 接收更完整的 admin-data-update 事件 (包含設定)
+    // [修正] 接收更完整的 admin-data-update 事件，並強制插入設定面板
     socket.on('admin-data-update', (data) => {
         const list = data.list;
         const config = data.config;
         const container = getEl('meeting-list-body');
         
-        // 渲染會議列表
+        // 1. 渲染會議列表
         if (container) {
             if (list.length === 0) {
                 container.innerHTML = '<p style="text-align:center; padding:20px; color:#ccc;">目前沒有進行中的會議</p>';
@@ -351,33 +350,34 @@ if (isAdminPage) {
             }
         }
 
-        // [新增] 渲染全域設定 (如果還沒有插入過)
+        // 2. [修正] 強制渲染全域設定 (不依賴 .admin-header)
         let settingsPanel = getEl('admin-global-settings');
-        if (!settingsPanel) {
+        // 如果還沒建立過，且列表容器存在，就建立並插入
+        if (!settingsPanel && container) {
             settingsPanel = document.createElement('div');
             settingsPanel.id = 'admin-global-settings';
-            settingsPanel.style.cssText = 'background:white; padding:15px; margin-bottom:20px; border-radius:8px; display:flex; gap:20px; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.05);';
-            // 插入在標題下方
-            const header = document.querySelector('.admin-header');
-            header.parentNode.insertBefore(settingsPanel, header.nextSibling);
+            // 加強樣式，確保不跑版
+            settingsPanel.style.cssText = 'background:white; padding:15px; margin-bottom:20px; border-radius:8px; display:flex; gap:20px; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; flex-wrap:wrap;';
+            
+            // 找到列表的父容器
+            const parent = container.parentElement; 
+            if (parent) {
+                // 插入在最前面 (Card 的頂部)
+                parent.insertBefore(settingsPanel, parent.firstChild);
+            }
         }
 
-        settingsPanel.innerHTML = `
-            <div style="font-weight:bold; color:var(--text-main);">⚡ 全域設定</div>
-            <div style="display:flex; align-items:center; gap:10px;">
-                <label>最大會議室數量:</label>
-                <input type="number" value="${config.maxMeetings}" id="max-meeting-input" style="width:60px; padding:5px; border:1px solid #ddd; border-radius:4px;">
-                <button onclick="updateMaxMeetings()" class="btn" style="padding:5px 10px; margin:0; font-size:0.9rem;">更新</button>
-            </div>
-        `;
-    });
-    
-    // [舊版相容] 如果伺服器傳舊事件，轉發給新邏輯 (雖然這裡全覆蓋了，但保留以防萬一)
-    socket.on('admin-list-update', (list) => {
-        // 如果只收到 list，就沒有 config，介面可能會缺一角，但列表還是會出來
-        const container = getEl('meeting-list-body');
-        if (!container) return;
-        // ... (同上渲染列表邏輯)
+        // 更新內容
+        if (settingsPanel) {
+            settingsPanel.innerHTML = `
+                <div style="font-weight:bold; color:var(--text-main); min-width:80px;">⚡ 全域設定</div>
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <label style="font-size:0.9rem;">最大會議室數量:</label>
+                    <input type="number" value="${config ? config.maxMeetings : 5}" id="max-meeting-input" style="width:60px; padding:5px; border:1px solid #ddd; border-radius:4px; text-align:center;">
+                    <button onclick="updateMaxMeetings()" class="btn" style="padding:5px 15px; margin:0; font-size:0.9rem; background:var(--text-main);">更新</button>
+                </div>
+            `;
+        }
     });
 
     window.updateMaxMeetings = function() {
