@@ -35,7 +35,6 @@ class RateLimiter {
 const loginLimiter = new RateLimiter(5, 60 * 1000); 
 const createLimiter = new RateLimiter(10, 60 * 1000);
 
-// --- 資料結構 ---
 const meetings = new Map();
 
 // --- 預設樣板 ---
@@ -45,13 +44,8 @@ let globalPresets = [
     { name: "🍱 午餐題", question: "今天午餐想吃什麼類別？", options: ["🍱 便當/自助餐", "🍜 麵食/水餃", "🍔 速食", "🥗 輕食/沙拉"] }
 ];
 
-// --- 輔助函式 ---
-function isValidString(str, maxLength = 100) {
-    return typeof str === 'string' && str.trim().length > 0 && str.length <= maxLength;
-}
-
 function createMeetingState(pin, hostName) {
-    const safeHostName = isValidString(hostName, 50) ? hostName : 'HOST';
+    const safeHostName = (hostName && hostName.trim().length > 0) ? hostName.substring(0, 50) : 'HOST';
     return {
         pin: pin,
         hostName: safeHostName,
@@ -124,12 +118,8 @@ function broadcastState(meeting) {
 
     meeting.voterRecords.forEach((data, deviceId) => {
         if (data.isOnline) {
-            participantList.push({ 
-                name: data.username, 
-                joinTime: data.firstJoinTime
-            });
+            participantList.push({ name: data.username, joinTime: data.firstJoinTime });
         }
-
         const votes = data.votes;
         const username = data.username;
         if (votes && votes.length > 0) {
@@ -150,12 +140,15 @@ function broadcastState(meeting) {
     const roomName = `meeting-${meeting.pin}`;
     const allSockets = io.sockets.adapter.rooms.get(roomName);
     const hostRoomName = `${meeting.pin}-host`;
-    const hostSockets = io.sockets.adapter.rooms.get(hostRoomName);
     let realUserCount = 0;
+    
     if (allSockets) {
-        allSockets.forEach(socketId => {
-            if (!hostSockets || !hostSockets.has(socketId)) realUserCount++;
-        });
+        for (const id of allSockets) {
+            const s = io.sockets.sockets.get(id);
+            if (s && !s.data.isHost) {
+                realUserCount++;
+            }
+        }
     }
 
     const fullOptions = meeting.options.map(opt => ({
@@ -178,14 +171,14 @@ function broadcastState(meeting) {
         voteId: meeting.voteId
     };
 
-    io.to(hostRoomName).emit('state-update', { 
+    io.to(`${meeting.pin}-host`).emit('state-update', { 
         ...basePayload, options: fullOptions, hostVoterMap, presets: meeting.presets, participantList: participantList 
     });
 
     if (meeting.settings.blindMode && meeting.status === 'voting') {
-        io.to(roomName).except(hostRoomName).emit('state-update', { ...basePayload, options: blindedOptions });
+        io.to(roomName).except(`${meeting.pin}-host`).emit('state-update', { ...basePayload, options: blindedOptions });
     } else {
-        io.to(roomName).except(hostRoomName).emit('state-update', { ...basePayload, options: fullOptions });
+        io.to(roomName).except(`${meeting.pin}-host`).emit('state-update', { ...basePayload, options: fullOptions });
     }
 }
 
@@ -257,14 +250,9 @@ io.on('connection', (socket) => {
         touchMeeting(meeting);
 
         const now = Date.now();
-        
         if (!meeting.voterRecords.has(data.deviceId)) {
             meeting.voterRecords.set(data.deviceId, { 
-                username: username, 
-                votes: [], 
-                firstJoinTime: now,
-                lastLeaveTime: null,
-                isOnline: true
+                username: username, votes: [], firstJoinTime: now, lastLeaveTime: null, isOnline: true
             });
         } else {
             const record = meeting.voterRecords.get(data.deviceId);
@@ -283,11 +271,8 @@ io.on('connection', (socket) => {
         broadcastAdminList();
     });
 
-    // [關鍵修正] create-meeting 現在接收物件 (包含 deviceId)
     socket.on('create-meeting', (payload) => {
         if (!createLimiter.check(clientIp)) return; 
-        
-        // 相容舊版 (如果只傳字串)
         const hostName = typeof payload === 'string' ? payload : payload.hostName;
         const deviceId = typeof payload === 'object' ? payload.deviceId : null;
 
@@ -300,24 +285,15 @@ io.on('connection', (socket) => {
 
         const newPin = generateUniquePin();
         const newMeeting = createMeetingState(newPin, hostName);
-        
-        // [關鍵修正] 如果有 deviceId，把主持人也註冊進 voterRecords
-        // 這樣主持人自己投票時，伺服器才會認得
         if (deviceId) {
             newMeeting.voterRecords.set(deviceId, {
-                username: hostName + ' (主持人)',
-                votes: [],
-                firstJoinTime: Date.now(),
-                lastLeaveTime: null,
-                isOnline: true
+                username: hostName + ' (主持人)', votes: [], firstJoinTime: Date.now(), lastLeaveTime: null, isOnline: true
             });
         }
-
         meetings.set(newPin, newMeeting);
 
         socket.data.pin = newPin;
         socket.data.isHost = true;
-        // 雖然是 Host，但也把 deviceId 綁上去，斷線時才知道是誰
         if (deviceId) socket.data.deviceId = deviceId; 
 
         socket.join(`meeting-${newPin}`);
@@ -410,15 +386,12 @@ io.on('connection', (socket) => {
         const pin = socket.data.pin || data.pin; 
         const meeting = meetings.get(pin);
         if (!meeting || meeting.status !== 'voting') return;
-        // [關鍵修正] 移除對 socket.data.isHost 的阻擋
-        
         touchMeeting(meeting);
         
-        const safeVotes = Array.isArray(data.votes) ? data.votes.filter(v => Number.isInteger(v)) : [];
+        const safeVotes = Array.isArray(data.votes) ? data.votes.map(v=>parseInt(v)).filter(v=>!isNaN(v)) : [];
         if (meeting.voterRecords.has(data.deviceId)) {
             const record = meeting.voterRecords.get(data.deviceId);
             record.votes = safeVotes;
-            // 這裡不需要改名，避免主持人名字被覆蓋
             if (!socket.data.isHost) {
                 record.username = String(data.username).substring(0, 20);
             }
@@ -452,15 +425,12 @@ io.on('connection', (socket) => {
 
         csvContent += `\n--- 人員考勤表 (同一裝置彙整) ---\n`;
         csvContent += `"姓名","最早進入時間","最後離開時間","目前狀態"\n`;
-        
         meeting.voterRecords.forEach(record => {
             const firstIn = record.firstJoinTime ? new Date(record.firstJoinTime).toLocaleString() : '-';
             const lastOut = record.isOnline ? '-' : (record.lastLeaveTime ? new Date(record.lastLeaveTime).toLocaleString() : '-');
             const status = record.isOnline ? '🟢 在線' : '🔴 離線';
-            
             csvContent += `"${record.username}","${firstIn}","${lastOut}","${status}"\n`;
         });
-        
         socket.emit('export-data', csvContent);
     });
 
@@ -468,6 +438,7 @@ io.on('connection', (socket) => {
         if (!loginLimiter.check(clientIp)) { socket.emit('admin-login-fail'); return; }
         if (pwd === ADMIN_PASSWORD) {
             socket.join('admin-room');
+            socket.data.isAdmin = true; // [安全性修正] 蓋上管理員印章
             socket.emit('admin-login-success');
             broadcastAdminList();
         } else {
@@ -475,8 +446,9 @@ io.on('connection', (socket) => {
         }
     });
 
+    // [安全性修正] 檢查 isAdmin 標記，而非只檢查房間
     socket.on('admin-set-limit', (newLimit) => {
-        if (socket.rooms.has('admin-room')) {
+        if (socket.data.isAdmin) {
             const limit = parseInt(newLimit);
             if (limit > 0 && limit <= 100) {
                 MAX_MEETINGS = limit;
@@ -487,14 +459,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('admin-terminate', (targetPin) => {
-        if (socket.rooms.has('admin-room')) {
+        if (socket.data.isAdmin) {
             const meeting = meetings.get(targetPin);
             if (meeting) terminateMeeting(meeting, 'admin-force');
         }
     });
 
     socket.on('admin-update-timeout', (data) => {
-        if (socket.rooms.has('admin-room')) {
+        if (socket.data.isAdmin) {
             const meeting = meetings.get(data.pin);
             if (meeting) {
                 const hours = Math.max(0.5, Math.min(parseInt(data.hours), 24));
@@ -505,11 +477,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('admin-change-password', (newPwd) => {
-        if (socket.rooms.has('admin-room')) socket.emit('admin-msg', '基於安全考量，請透過修改 Render 環境變數 (ADMIN_PASSWORD) 來變更密碼');
+        if (socket.data.isAdmin) socket.emit('admin-msg', '基於安全考量，請透過修改 Render 環境變數 (ADMIN_PASSWORD) 來變更密碼');
     });
 
     socket.on('admin-add-preset', (preset) => {
-        if (socket.rooms.has('admin-room')) {
+        if (socket.data.isAdmin) {
             if(preset.name && preset.question && Array.isArray(preset.options)) {
                 globalPresets.push(preset);
                 meetings.forEach(m => { m.presets.push(preset); broadcastState(m); });
