@@ -10,12 +10,9 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- 全域設定 ---
-// 密碼從 Render 環境變數讀取，預設 8888
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '8888'; 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_TIMEOUT = parseInt(process.env.TIMEOUT_DURATION) || 3 * 60 * 60 * 1000;
-
-// 會議室數量上限
 let MAX_MEETINGS = 5;
 
 // --- 速率限制器 ---
@@ -67,7 +64,6 @@ function createMeetingState(pin, hostName) {
         voteId: 0,
         hasArchived: false,
         history: [],
-        // [修改] 考勤核心：Key=deviceId
         voterRecords: new Map(), 
         presets: [...globalPresets],
         createdAt: Date.now(),
@@ -126,17 +122,14 @@ function broadcastState(meeting) {
     const hostVoterMap = {}; 
     const participantList = []; 
 
-    // 1. 整理名單與票數
     meeting.voterRecords.forEach((data, deviceId) => {
-        // [名單邏輯] 只顯示 "在線 (isOnline)" 的人
         if (data.isOnline) {
             participantList.push({ 
                 name: data.username, 
-                joinTime: data.firstJoinTime // 顯示最早加入時間
+                joinTime: data.firstJoinTime
             });
         }
 
-        // [計票邏輯] 只要有投過票就記錄 (不管是否斷線)
         const votes = data.votes;
         const username = data.username;
         if (votes && votes.length > 0) {
@@ -152,22 +145,17 @@ function broadcastState(meeting) {
         }
     });
     
-    // 依加入時間排序
     participantList.sort((a, b) => a.joinTime - b.joinTime);
 
-    // 2. 計算真實線上人數 (排除主持人)
     const roomName = `meeting-${meeting.pin}`;
-    const allSocketIds = io.sockets.adapter.rooms.get(roomName);
+    const allSockets = io.sockets.adapter.rooms.get(roomName);
+    const hostRoomName = `${meeting.pin}-host`;
+    const hostSockets = io.sockets.adapter.rooms.get(hostRoomName);
     let realUserCount = 0;
-    
-    if (allSocketIds) {
-        for (const id of allSocketIds) {
-            const s = io.sockets.sockets.get(id);
-            // 嚴格檢查：只算「不是主持人」的 Socket
-            if (s && !s.data.isHost) {
-                realUserCount++;
-            }
-        }
+    if (allSockets) {
+        allSockets.forEach(socketId => {
+            if (!hostSockets || !hostSockets.has(socketId)) realUserCount++;
+        });
     }
 
     const fullOptions = meeting.options.map(opt => ({
@@ -190,14 +178,14 @@ function broadcastState(meeting) {
         voteId: meeting.voteId
     };
 
-    io.to(`${meeting.pin}-host`).emit('state-update', { 
+    io.to(hostRoomName).emit('state-update', { 
         ...basePayload, options: fullOptions, hostVoterMap, presets: meeting.presets, participantList: participantList 
     });
 
     if (meeting.settings.blindMode && meeting.status === 'voting') {
-        io.to(roomName).except(`${meeting.pin}-host`).emit('state-update', { ...basePayload, options: blindedOptions });
+        io.to(roomName).except(hostRoomName).emit('state-update', { ...basePayload, options: blindedOptions });
     } else {
-        io.to(roomName).except(`${meeting.pin}-host`).emit('state-update', { ...basePayload, options: fullOptions });
+        io.to(roomName).except(hostRoomName).emit('state-update', { ...basePayload, options: fullOptions });
     }
 }
 
@@ -209,7 +197,6 @@ function terminateMeeting(meeting, reason = 'manual') {
     meeting.question = '';
     meeting.endTime = null;
     
-    // 結束時，所有還在線上的人都要壓上離開時間
     const now = Date.now();
     meeting.voterRecords.forEach(record => {
         if (record.isOnline) {
@@ -271,9 +258,7 @@ io.on('connection', (socket) => {
 
         const now = Date.now();
         
-        // [核心邏輯] 考勤記錄
         if (!meeting.voterRecords.has(data.deviceId)) {
-            // 新裝置：紀錄 First Join
             meeting.voterRecords.set(data.deviceId, { 
                 username: username, 
                 votes: [], 
@@ -282,11 +267,10 @@ io.on('connection', (socket) => {
                 isOnline: true
             });
         } else {
-            // 舊裝置回來了：更新狀態，不改 First Join
             const record = meeting.voterRecords.get(data.deviceId);
             record.username = username;
             record.isOnline = true;
-            record.lastLeaveTime = null; // 因為他現在回來了，所以離開時間清空
+            record.lastLeaveTime = null; 
             meeting.voterRecords.set(data.deviceId, record);
         }
         
@@ -419,7 +403,6 @@ io.on('connection', (socket) => {
         socket.emit('vote-confirmed', safeVotes);
     });
 
-    // --- CSV 匯出 (修改為考勤格式) ---
     socket.on('request-export', () => {
         const meeting = meetings.get(socket.data.pin);
         if (!meeting || !socket.data.isHost) return;
@@ -442,13 +425,11 @@ io.on('connection', (socket) => {
             csvContent += `,,,\n`; 
         });
 
-        // [修改] 輸出 人員考勤表 (最早進/最後出)
         csvContent += `\n--- 人員考勤表 (同一裝置彙整) ---\n`;
         csvContent += `"姓名","最早進入時間","最後離開時間","目前狀態"\n`;
         
         meeting.voterRecords.forEach(record => {
             const firstIn = record.firstJoinTime ? new Date(record.firstJoinTime).toLocaleString() : '-';
-            // 如果還在線上，離開時間顯示 "-"
             const lastOut = record.isOnline ? '-' : (record.lastLeaveTime ? new Date(record.lastLeaveTime).toLocaleString() : '-');
             const status = record.isOnline ? '🟢 在線' : '🔴 離線';
             
@@ -517,8 +498,6 @@ io.on('connection', (socket) => {
         if (pin) {
             const meeting = meetings.get(pin);
             if (meeting) {
-                // [修改] 斷線時，標記為離線並更新離開時間
-                // 注意：主持人(Host)雖然不在voterRecords裡，但預覽視窗(iframe)在。
                 if (socket.data.deviceId && meeting.voterRecords.has(socket.data.deviceId)) {
                     const record = meeting.voterRecords.get(socket.data.deviceId);
                     record.isOnline = false;
