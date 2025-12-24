@@ -29,16 +29,19 @@ const isAdminPage = document.body.id === 'admin-page';
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
-// --- [新功能] 防止誤複製 URL 造成自動登入 ---
-const isPreview = urlParams.get('preview') === 'true';
+// --- [關鍵修復] 預覽模式判斷 ---
+// 只有當網址有 preview=true 且「真的在 iframe 裡面」時，才算是預覽模式
+const isInIframe = window.self !== window.top;
+const isPreview = urlParams.get('preview') === 'true' && isInIframe;
 
-// 如果這不是預覽視窗，但網址列卻有 pin 或 username 參數
-// 代表使用者可能是複製了預覽視窗的連結
-// 我們要強制清除參數，以免 Socket 自動連線造成「鬼影人數」
-if (!isPreview && isParticipantPage && (urlParams.has('pin') || urlParams.has('username'))) {
-    // 使用 History API 清除網址參數，不刷新頁面
+// --- [關鍵修復] 防止誤複製 URL 造成身分錯亂 ---
+// 如果網址帶有 preview=true 但我們不在 iframe 裡 (代表是誤複製到了新分頁)
+if (urlParams.get('preview') === 'true' && !isInIframe) {
+    // 強制清除網址參數，避免自動登入邏輯跑錯
     const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
     window.history.replaceState({path: cleanUrl}, '', cleanUrl);
+    // 重新整理頁面以確保乾淨狀態
+    window.location.reload();
 }
 
 // --- 輔助函式 ---
@@ -82,23 +85,29 @@ if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
     
-    // [修正] 取得參數前，確保它們還存在 (上面可能清除了)
+    // 重新抓取參數 (因為上面可能已經清除了)
     const urlPin = new URLSearchParams(window.location.search).get('pin');
     const urlUser = new URLSearchParams(window.location.search).get('username');
 
     // 1. 一般使用者：如果有 localStorage，自動嘗試連線
+    // 注意：這裡只會在非預覽模式下執行
     if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
         loginScreen.innerHTML = `<h2 style="text-align:center; margin-top:50px; color:var(--primary);">↻ 正在恢復連線...</h2>`;
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
+    // QR Code 掃描進場 (帶有 PIN 但沒有 preview)
+    else if (!isPreview && urlPin) {
+        getEl('pin-input').value = urlPin;
+        // 不自動登入，等待使用者輸入名字
+    }
     
-    // 2. 預覽視窗：如果有參數且是 preview 模式，才自動連線
+    // 2. 預覽視窗：只有真正判定為 preview 模式才自動連線
     if (isPreview && urlPin && urlUser) {
         currentPin = urlPin;
         currentUsername = urlUser;
-        // 使用特殊的 deviceId 給預覽視窗
+        // 使用特殊的 deviceId 給預覽視窗，確保不跟本機打架
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: 'host-preview-' + Date.now() });
     }
 
@@ -166,11 +175,10 @@ if (isHostPage) {
         socket.emit('host-resume', storedHostPin);
     }
 
-    // [修改] 強制將預覽視窗的名字設為 "主持人"
+    // 強制將預覽視窗的名字設為 "主持人"
     function updatePreview(pin, name) {
         const iframe = document.getElementById('preview-frame');
         if (iframe) {
-            // 注意這裡：username 直接寫死 '主持人'
             iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent('主持人')}`;
         }
     }
@@ -187,7 +195,6 @@ if (isHostPage) {
         socket.emit('create-meeting', name);
     });
 
-    // 監聽創建失敗事件 (會議室額滿)
     socket.on('create-failed', (msg) => {
         const modal = document.createElement('div');
         modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; display:flex; justify-content:center; align-items:center;';
@@ -334,7 +341,6 @@ if (isAdminPage) {
         const config = data.config;
         const container = getEl('meeting-list-body');
         
-        // 1. 渲染會議列表
         if (container) {
             if (list.length === 0) {
                 container.innerHTML = '<p style="text-align:center; padding:20px; color:#ccc;">目前沒有進行中的會議</p>';
@@ -366,16 +372,13 @@ if (isAdminPage) {
             }
         }
 
-        // 2. 渲染全域設定
         let settingsPanel = getEl('admin-global-settings');
         if (!settingsPanel && container) {
             settingsPanel = document.createElement('div');
             settingsPanel.id = 'admin-global-settings';
             settingsPanel.style.cssText = 'background:white; padding:15px; margin-bottom:20px; border-radius:8px; display:flex; gap:20px; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; flex-wrap:wrap;';
             const parent = container.parentElement; 
-            if (parent) {
-                parent.insertBefore(settingsPanel, parent.firstChild);
-            }
+            if (parent) parent.insertBefore(settingsPanel, parent.firstChild);
         }
 
         if (settingsPanel) {
@@ -392,9 +395,7 @@ if (isAdminPage) {
 
     window.updateMaxMeetings = function() {
         const val = getEl('max-meeting-input').value;
-        if (val) {
-            socket.emit('admin-set-limit', val);
-        }
+        if (val) socket.emit('admin-set-limit', val);
     }
 
     window.updateTimeout = function(pin, hours) {
