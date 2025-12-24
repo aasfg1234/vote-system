@@ -71,12 +71,9 @@ if (isParticipantPage) {
     const storedName = localStorage.getItem('vote_username');
     
     const isPreview = urlParams.get('preview') === 'true';
-    
-    // [新增] 檢查網址參數是否有 pin 和 username (給 Host 預覽用)
     const urlPin = urlParams.get('pin');
     const urlUser = urlParams.get('username');
 
-    // 邏輯 1: 一般使用者的自動登入 (非預覽模式)
     if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
@@ -84,11 +81,9 @@ if (isParticipantPage) {
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
     
-    // [新增] 邏輯 2: Host 預覽視窗的自動登入 (預覽模式 + 網址有參數)
     if (isPreview && urlPin && urlUser) {
         currentPin = urlPin;
         currentUsername = urlUser;
-        // 預覽模式直接登入，不寫入 localStorage 以免汙染主視窗
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: 'host-preview-' + Date.now() });
     }
 
@@ -156,11 +151,9 @@ if (isHostPage) {
         socket.emit('host-resume', storedHostPin);
     }
 
-    // [新增] 更新預覽視窗函式
     function updatePreview(pin, name) {
         const iframe = document.getElementById('preview-frame');
         if (iframe) {
-            // 把 PIN 和 名稱 塞進 URL，這樣 app.js 就能讀取並自動登入
             iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent(name)}`;
         }
     }
@@ -186,10 +179,7 @@ if (isHostPage) {
         currentUsername = data.hostName;
         localStorage.setItem('vote_host_pin', data.pin);
         localStorage.setItem('vote_host_name', data.hostName);
-        
-        // [新增] 呼叫更新預覽
         updatePreview(data.pin, data.hostName);
-        
         showToast('會議室建立成功');
     });
 
@@ -201,10 +191,7 @@ if (isHostPage) {
         currentPin = data.pin;
         currentUsername = data.hostName;
         if(data.history) renderHistory(data.history);
-        
-        // [新增] 呼叫更新預覽
         updatePreview(data.pin, data.hostName);
-
         showToast('歡迎回來，會議連線已恢復');
     });
 
@@ -236,7 +223,6 @@ if (isHostPage) {
     socket.on('host-name-updated', (n) => {
         getEl('host-name-display').textContent = n;
         localStorage.setItem('vote_host_name', n);
-        // 如果改名，也可以順便更新 iframe，但這裡暫不強制刷新以免干擾體驗
         showToast('名稱更新');
     });
 
@@ -493,6 +479,23 @@ socket.on('state-update', (state) => {
     if (state.status === 'terminated') {
         renderTerminatedScreen();
         return;
+    }
+
+    // [新增] 顯示會議名稱 (左上角)
+    // 檢查是否已有顯示名稱的元素，沒有就插入一個
+    let titleEl = getEl('meeting-title-display');
+    if (!titleEl) {
+        titleEl = document.createElement('div');
+        titleEl.id = 'meeting-title-display';
+        // 樣式：灰色、粗體、稍微小一點
+        titleEl.style.cssText = 'color:var(--text-light); font-weight:bold; font-size:0.9rem; margin-bottom:5px;';
+        const container = getEl('vote-screen');
+        // 插入在最上面
+        container.insertBefore(titleEl, container.firstChild);
+    }
+    // 更新內容
+    if (state.meetingName) {
+        titleEl.textContent = `📌 ${state.meetingName}`;
     }
 
     currentSettings = state.settings;
