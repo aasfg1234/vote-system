@@ -283,9 +283,14 @@ io.on('connection', (socket) => {
         broadcastAdminList();
     });
 
-    socket.on('create-meeting', (hostName) => {
+    // [關鍵修正] create-meeting 現在接收物件 (包含 deviceId)
+    socket.on('create-meeting', (payload) => {
         if (!createLimiter.check(clientIp)) return; 
         
+        // 相容舊版 (如果只傳字串)
+        const hostName = typeof payload === 'string' ? payload : payload.hostName;
+        const deviceId = typeof payload === 'object' ? payload.deviceId : null;
+
         let activeCount = 0;
         meetings.forEach(m => { if (m.status !== 'terminated') activeCount++; });
         if (activeCount >= MAX_MEETINGS) {
@@ -295,10 +300,26 @@ io.on('connection', (socket) => {
 
         const newPin = generateUniquePin();
         const newMeeting = createMeetingState(newPin, hostName);
+        
+        // [關鍵修正] 如果有 deviceId，把主持人也註冊進 voterRecords
+        // 這樣主持人自己投票時，伺服器才會認得
+        if (deviceId) {
+            newMeeting.voterRecords.set(deviceId, {
+                username: hostName + ' (主持人)',
+                votes: [],
+                firstJoinTime: Date.now(),
+                lastLeaveTime: null,
+                isOnline: true
+            });
+        }
+
         meetings.set(newPin, newMeeting);
 
         socket.data.pin = newPin;
         socket.data.isHost = true;
+        // 雖然是 Host，但也把 deviceId 綁上去，斷線時才知道是誰
+        if (deviceId) socket.data.deviceId = deviceId; 
+
         socket.join(`meeting-${newPin}`);
         socket.join(`${newPin}-host`);
 
@@ -389,21 +410,18 @@ io.on('connection', (socket) => {
         const pin = socket.data.pin || data.pin; 
         const meeting = meetings.get(pin);
         if (!meeting || meeting.status !== 'voting') return;
-        
-        // [關鍵修復] 移除了 'if (socket.data.isHost) return;'
-        // 這樣即使是在同一個 Socket 連線下，只要資料正確就可以投票
+        // [關鍵修正] 移除對 socket.data.isHost 的阻擋
         
         touchMeeting(meeting);
         
-        // [關鍵修復] 更寬容的資料處理，將字串轉為數字
-        const safeVotes = Array.isArray(data.votes) 
-            ? data.votes.map(v => parseInt(v)).filter(v => !isNaN(v)) 
-            : [];
-
+        const safeVotes = Array.isArray(data.votes) ? data.votes.filter(v => Number.isInteger(v)) : [];
         if (meeting.voterRecords.has(data.deviceId)) {
             const record = meeting.voterRecords.get(data.deviceId);
             record.votes = safeVotes;
-            record.username = String(data.username).substring(0, 20);
+            // 這裡不需要改名，避免主持人名字被覆蓋
+            if (!socket.data.isHost) {
+                record.username = String(data.username).substring(0, 20);
+            }
             meeting.voterRecords.set(data.deviceId, record);
         }
         broadcastState(meeting);
