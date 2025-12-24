@@ -29,6 +29,18 @@ const isAdminPage = document.body.id === 'admin-page';
 const isProjector = urlParams.get('mode') === 'projector';
 if (isProjector) document.body.classList.add('projector-mode');
 
+// --- [新功能] 防止誤複製 URL 造成自動登入 ---
+const isPreview = urlParams.get('preview') === 'true';
+
+// 如果這不是預覽視窗，但網址列卻有 pin 或 username 參數
+// 代表使用者可能是複製了預覽視窗的連結
+// 我們要強制清除參數，以免 Socket 自動連線造成「鬼影人數」
+if (!isPreview && isParticipantPage && (urlParams.has('pin') || urlParams.has('username'))) {
+    // 使用 History API 清除網址參數，不刷新頁面
+    const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+    window.history.replaceState({path: cleanUrl}, '', cleanUrl);
+}
+
 // --- 輔助函式 ---
 function getDeviceId() {
     let id = localStorage.getItem('vote_device_id');
@@ -70,10 +82,11 @@ if (isParticipantPage) {
     const storedPin = localStorage.getItem('vote_pin');
     const storedName = localStorage.getItem('vote_username');
     
-    const isPreview = urlParams.get('preview') === 'true';
-    const urlPin = urlParams.get('pin');
-    const urlUser = urlParams.get('username');
+    // [修正] 取得參數前，確保它們還存在 (上面可能清除了)
+    const urlPin = new URLSearchParams(window.location.search).get('pin');
+    const urlUser = new URLSearchParams(window.location.search).get('username');
 
+    // 1. 一般使用者：如果有 localStorage，自動嘗試連線
     if (!isPreview && storedPin && storedName) {
         currentPin = storedPin;
         currentUsername = storedName;
@@ -81,9 +94,11 @@ if (isParticipantPage) {
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: deviceId });
     }
     
+    // 2. 預覽視窗：如果有參數且是 preview 模式，才自動連線
     if (isPreview && urlPin && urlUser) {
         currentPin = urlPin;
         currentUsername = urlUser;
+        // 使用特殊的 deviceId 給預覽視窗
         socket.emit('join', { pin: currentPin, username: currentUsername, deviceId: 'host-preview-' + Date.now() });
     }
 
@@ -151,10 +166,12 @@ if (isHostPage) {
         socket.emit('host-resume', storedHostPin);
     }
 
+    // [修改] 強制將預覽視窗的名字設為 "主持人"
     function updatePreview(pin, name) {
         const iframe = document.getElementById('preview-frame');
         if (iframe) {
-            iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent(name)}`;
+            // 注意這裡：username 直接寫死 '主持人'
+            iframe.src = `participant.html?clean=true&preview=true&pin=${pin}&username=${encodeURIComponent('主持人')}`;
         }
     }
 
@@ -312,7 +329,6 @@ if (isAdminPage) {
         showToast('管理員登入成功');
     });
 
-    // [修正] 接收更完整的 admin-data-update 事件，並強制插入設定面板
     socket.on('admin-data-update', (data) => {
         const list = data.list;
         const config = data.config;
@@ -350,24 +366,18 @@ if (isAdminPage) {
             }
         }
 
-        // 2. [修正] 強制渲染全域設定 (不依賴 .admin-header)
+        // 2. 渲染全域設定
         let settingsPanel = getEl('admin-global-settings');
-        // 如果還沒建立過，且列表容器存在，就建立並插入
         if (!settingsPanel && container) {
             settingsPanel = document.createElement('div');
             settingsPanel.id = 'admin-global-settings';
-            // 加強樣式，確保不跑版
             settingsPanel.style.cssText = 'background:white; padding:15px; margin-bottom:20px; border-radius:8px; display:flex; gap:20px; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; flex-wrap:wrap;';
-            
-            // 找到列表的父容器
             const parent = container.parentElement; 
             if (parent) {
-                // 插入在最前面 (Card 的頂部)
                 parent.insertBefore(settingsPanel, parent.firstChild);
             }
         }
 
-        // 更新內容
         if (settingsPanel) {
             settingsPanel.innerHTML = `
                 <div style="font-weight:bold; color:var(--text-main); min-width:80px;">⚡ 全域設定</div>
