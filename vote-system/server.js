@@ -13,7 +13,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '8888'; 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_TIMEOUT = parseInt(process.env.TIMEOUT_DURATION) || 3 * 60 * 60 * 1000;
+// [建議10] Debug 開關：設為 true 會在後台印出關鍵流程
+const DEBUG = process.env.DEBUG === 'true' || false; 
+
 let MAX_MEETINGS = 5;
+
+// --- 簡單 Log 輔助 ---
+function log(tag, msg) {
+    if (DEBUG) console.log(`[${new Date().toISOString()}] [${tag}] ${msg}`);
+}
 
 // --- 速率限制器 ---
 class RateLimiter {
@@ -80,6 +88,7 @@ setInterval(() => {
     meetings.forEach((meeting, pin) => {
         if (meeting.status !== 'terminated') {
             if (now - meeting.lastActiveTime > meeting.timeoutDuration) {
+                log('SYSTEM', `Meeting ${pin} auto-timeout`);
                 terminateMeeting(meeting, 'auto-timeout');
             }
         }
@@ -89,6 +98,7 @@ setInterval(() => {
 // --- 核心邏輯 ---
 function archiveCurrentVote(meeting) {
     if (!meeting || !meeting.question || meeting.hasArchived) return;
+    log('ARCHIVE', `Archiving vote for meeting ${meeting.pin}`);
     const snapshot = {
         question: meeting.question,
         options: JSON.parse(JSON.stringify(meeting.options)), 
@@ -183,7 +193,9 @@ function broadcastState(meeting) {
 }
 
 function terminateMeeting(meeting, reason = 'manual') {
-    if (!meeting) return;
+    if (!meeting || meeting.status === 'terminated') return; // [建議7] 防重複關閉
+    log('TERMINATE', `Meeting ${meeting.pin} terminated. Reason: ${reason}`);
+    
     archiveCurrentVote(meeting);
     if (meeting.timer) clearInterval(meeting.timer);
     meeting.status = 'terminated';
@@ -284,6 +296,7 @@ io.on('connection', (socket) => {
         }
 
         const newPin = generateUniquePin();
+        log('CREATE', `Meeting created: ${newPin} by ${hostName}`);
         const newMeeting = createMeetingState(newPin, hostName);
         if (deviceId) {
             newMeeting.voterRecords.set(deviceId, {
@@ -322,9 +335,17 @@ io.on('connection', (socket) => {
     socket.on('start-vote', (data) => {
         const meeting = meetings.get(socket.data.pin);
         if (!meeting || !socket.data.isHost) return;
+        
+        // [建議7] 防手抖連點：如果已經在投票，直接忽略
+        if (meeting.status === 'voting') {
+            log('WARN', `Meeting ${meeting.pin} duplicate start-vote ignored`);
+            return;
+        }
+
         touchMeeting(meeting);
         if (!Array.isArray(data.options) || data.options.length < 2) return;
 
+        log('VOTE', `Vote started in ${meeting.pin}`);
         archiveCurrentVote(meeting);
         meeting.voterRecords.forEach(record => record.votes = []);
         meeting.options.forEach(o => o.count = 0);
@@ -368,6 +389,9 @@ io.on('connection', (socket) => {
     socket.on('stop-vote', () => {
         const meeting = meetings.get(socket.data.pin);
         if (meeting && socket.data.isHost) {
+            // [防呆] 已經結束就不要再結束一次
+            if (meeting.status === 'ended') return; 
+            
             touchMeeting(meeting);
             if (meeting.timer) clearInterval(meeting.timer);
             meeting.status = 'ended';
@@ -379,13 +403,14 @@ io.on('connection', (socket) => {
 
     socket.on('terminate-meeting', () => {
         const meeting = meetings.get(socket.data.pin);
-        if (meeting && socket.data.isHost) terminateMeeting(meeting);
+        if (meeting && socket.data.isHost) terminateMeeting(meeting, 'host-manual');
     });
 
     socket.on('submit-vote', (data) => {
         const pin = socket.data.pin || data.pin; 
         const meeting = meetings.get(pin);
         if (!meeting || meeting.status !== 'voting') return;
+        
         touchMeeting(meeting);
         
         const safeVotes = Array.isArray(data.votes) ? data.votes.map(v=>parseInt(v)).filter(v=>!isNaN(v)) : [];
@@ -438,7 +463,7 @@ io.on('connection', (socket) => {
         if (!loginLimiter.check(clientIp)) { socket.emit('admin-login-fail'); return; }
         if (pwd === ADMIN_PASSWORD) {
             socket.join('admin-room');
-            socket.data.isAdmin = true; // [安全性修正] 蓋上管理員印章
+            socket.data.isAdmin = true; 
             socket.emit('admin-login-success');
             broadcastAdminList();
         } else {
@@ -446,7 +471,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // [安全性修正] 檢查 isAdmin 標記，而非只檢查房間
     socket.on('admin-set-limit', (newLimit) => {
         if (socket.data.isAdmin) {
             const limit = parseInt(newLimit);
