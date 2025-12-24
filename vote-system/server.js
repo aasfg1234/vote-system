@@ -389,10 +389,17 @@ io.on('connection', (socket) => {
         const pin = socket.data.pin || data.pin; 
         const meeting = meetings.get(pin);
         if (!meeting || meeting.status !== 'voting') return;
-        if (socket.data.isHost) return;
+        
+        // [關鍵修復] 移除了 'if (socket.data.isHost) return;'
+        // 這樣即使是在同一個 Socket 連線下，只要資料正確就可以投票
+        
         touchMeeting(meeting);
         
-        const safeVotes = Array.isArray(data.votes) ? data.votes.filter(v => Number.isInteger(v)) : [];
+        // [關鍵修復] 更寬容的資料處理，將字串轉為數字
+        const safeVotes = Array.isArray(data.votes) 
+            ? data.votes.map(v => parseInt(v)).filter(v => !isNaN(v)) 
+            : [];
+
         if (meeting.voterRecords.has(data.deviceId)) {
             const record = meeting.voterRecords.get(data.deviceId);
             record.votes = safeVotes;
