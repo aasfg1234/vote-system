@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>主持人控制台</title>
     
-    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
-    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAMAAAAKE/YAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVHhe7cExAQAAAMKg9U9tCy8gAAAAAAAAdwoBUAAB03kF0wAAAABJRU5ErkJggg==">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURQAAAF5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTl5kTrg7dDkAAAAPdFJOUwAgbDCIgH+AsEC/n4+frz3gmlIAAAAcSURBVDhPY2BEAwxgJCNpEBsYVcCogFExYCoGAC5wABU+m7e9AAAAAElFTkSuQmCC">
 
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -113,6 +113,13 @@
                     </div>
                     <div id="monitor-options" style="display:flex; flex-direction:column; gap:8px;">
                         <p style="text-align:center; font-size:0.8rem; color:#ccc;">等待發布...</p>
+                    </div>
+                </div>
+
+                <div id="host-participants-section" style="margin-top: 15px; background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 15px;">
+                    <h3 style="font-size:1rem; margin-bottom:10px; color:var(--text-main);">📝 已加入名單</h3>
+                    <div id="participant-list-table" style="max-height: 200px; overflow-y: auto;">
+                        <p style="color:#ccc; font-size:0.8rem; text-align:center;">等待加入...</p>
                     </div>
                 </div>
 
