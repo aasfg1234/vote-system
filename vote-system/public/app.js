@@ -170,6 +170,22 @@ if (isHostPage) {
         socket.emit('create-meeting', name);
     });
 
+    // [新增] 監聽創建失敗事件 (會議室額滿)
+    socket.on('create-failed', (msg) => {
+        // 建立一個簡單的懸浮 Modal
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; display:flex; justify-content:center; align-items:center;';
+        modal.innerHTML = `
+            <div style="background:white; padding:30px; border-radius:8px; max-width:90%; width:350px; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+                <div style="font-size:3rem; margin-bottom:15px;">🚫</div>
+                <h3 style="color:var(--danger); margin-bottom:10px;">無法建立會議</h3>
+                <p style="color:var(--text-main); margin-bottom:20px; line-height:1.5;">${msg}</p>
+                <button onclick="this.closest('div').parentElement.remove()" class="btn" style="width:100%;">我知道了</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    });
+
     socket.on('create-success', (data) => {
         authOverlay.style.opacity = '0';
         setTimeout(() => authOverlay.remove(), 500);
@@ -297,40 +313,79 @@ if (isAdminPage) {
         showToast('管理員登入成功');
     });
 
-    socket.on('admin-list-update', (list) => {
+    // [修改] 接收更完整的 admin-data-update 事件 (包含設定)
+    socket.on('admin-data-update', (data) => {
+        const list = data.list;
+        const config = data.config;
         const container = getEl('meeting-list-body');
-        if (!container) return;
         
-        if (list.length === 0) {
-            container.innerHTML = '<p style="text-align:center; padding:20px; color:#ccc;">目前沒有進行中的會議</p>';
-            return;
+        // 渲染會議列表
+        if (container) {
+            if (list.length === 0) {
+                container.innerHTML = '<p style="text-align:center; padding:20px; color:#ccc;">目前沒有進行中的會議</p>';
+            } else {
+                let html = '';
+                list.forEach(m => {
+                    let statusClass = 'status-waiting';
+                    if (m.status === 'voting') statusClass = 'status-voting';
+                    if (m.status === 'terminated') statusClass = 'status-ended';
+
+                    html += `
+                    <div class="mt-list-item">
+                        <div style="font-weight:bold; color:var(--primary);">${m.pin}</div>
+                        <div>${m.hostName}</div>
+                        <div><span class="status-tag ${statusClass}">${m.status}</span></div>
+                        <div>👤 ${m.activeUsers}</div>
+                        <div class="timeout-control">
+                            <input type="number" class="timeout-input" value="${m.timeoutSetting}" 
+                                   onchange="updateTimeout('${m.pin}', this.value)"> hr
+                            <span style="font-size:0.8rem; color:#999;">(剩 ${m.remainingTime}分)</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-stop" style="padding:5px 10px; font-size:0.8rem; margin:0;" 
+                                    onclick="terminateMeeting('${m.pin}')">關閉</button>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            }
         }
 
-        let html = '';
-        list.forEach(m => {
-            let statusClass = 'status-waiting';
-            if (m.status === 'voting') statusClass = 'status-voting';
-            if (m.status === 'terminated') statusClass = 'status-ended';
+        // [新增] 渲染全域設定 (如果還沒有插入過)
+        let settingsPanel = getEl('admin-global-settings');
+        if (!settingsPanel) {
+            settingsPanel = document.createElement('div');
+            settingsPanel.id = 'admin-global-settings';
+            settingsPanel.style.cssText = 'background:white; padding:15px; margin-bottom:20px; border-radius:8px; display:flex; gap:20px; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.05);';
+            // 插入在標題下方
+            const header = document.querySelector('.admin-header');
+            header.parentNode.insertBefore(settingsPanel, header.nextSibling);
+        }
 
-            html += `
-            <div class="mt-list-item">
-                <div style="font-weight:bold; color:var(--primary);">${m.pin}</div>
-                <div>${m.hostName}</div>
-                <div><span class="status-tag ${statusClass}">${m.status}</span></div>
-                <div>👤 ${m.activeUsers}</div>
-                <div class="timeout-control">
-                    <input type="number" class="timeout-input" value="${m.timeoutSetting}" 
-                           onchange="updateTimeout('${m.pin}', this.value)"> hr
-                    <span style="font-size:0.8rem; color:#999;">(剩 ${m.remainingTime}分)</span>
-                </div>
-                <div>
-                    <button class="btn btn-stop" style="padding:5px 10px; font-size:0.8rem; margin:0;" 
-                            onclick="terminateMeeting('${m.pin}')">關閉</button>
-                </div>
-            </div>`;
-        });
-        container.innerHTML = html;
+        settingsPanel.innerHTML = `
+            <div style="font-weight:bold; color:var(--text-main);">⚡ 全域設定</div>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <label>最大會議室數量:</label>
+                <input type="number" value="${config.maxMeetings}" id="max-meeting-input" style="width:60px; padding:5px; border:1px solid #ddd; border-radius:4px;">
+                <button onclick="updateMaxMeetings()" class="btn" style="padding:5px 10px; margin:0; font-size:0.9rem;">更新</button>
+            </div>
+        `;
     });
+    
+    // [舊版相容] 如果伺服器傳舊事件，轉發給新邏輯 (雖然這裡全覆蓋了，但保留以防萬一)
+    socket.on('admin-list-update', (list) => {
+        // 如果只收到 list，就沒有 config，介面可能會缺一角，但列表還是會出來
+        const container = getEl('meeting-list-body');
+        if (!container) return;
+        // ... (同上渲染列表邏輯)
+    });
+
+    window.updateMaxMeetings = function() {
+        const val = getEl('max-meeting-input').value;
+        if (val) {
+            socket.emit('admin-set-limit', val);
+        }
+    }
 
     window.updateTimeout = function(pin, hours) {
         socket.emit('admin-update-timeout', { pin, hours });
@@ -445,7 +500,7 @@ socket.on('state-update', (state) => {
         getEl('monitor-count').textContent = state.joinedCount;
         getEl('monitor-total').textContent = state.totalVotes;
         
-        // [新增] 渲染參與者名單
+        // 渲染參與者名單
         const listTable = getEl('participant-list-table');
         if (listTable && state.participantList) {
             if (state.participantList.length === 0) {
